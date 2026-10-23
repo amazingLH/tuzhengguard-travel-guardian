@@ -11,6 +11,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from triptwin.config import Settings
+from triptwin.service_errors import BILLING_UNAVAILABLE_MESSAGE, is_billing_failure
 
 
 TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
@@ -304,6 +305,8 @@ class BailianManagedAgentClient:
                 request_kwargs["timeout"] = min(self._request_timeout_seconds, remaining)
             try:
                 response = self._client.request(method, url, **request_kwargs)
+                if response.is_error and is_billing_failure(response):
+                    raise BailianApiError(BILLING_UNAVAILABLE_MESSAGE)
                 if self._operation_deadline is not None and time.monotonic() >= self._operation_deadline:
                     raise BailianTimeoutError("本次实时核验已超时，未将超时结果标为成功；已有行程仍可查看。")
                 if response.status_code not in TRANSIENT_STATUS_CODES:

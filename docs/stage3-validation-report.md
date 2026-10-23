@@ -36,7 +36,7 @@ Plan B：
 ## 复现命令
 
 ```powershell
-Set-Location -LiteralPath 'C:\Users\NGWS04\Desktop\FlyaiCompetition'
+Set-Location -LiteralPath '<project-directory>'
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m pip install -e .

@@ -328,12 +328,11 @@ def test_public_chat_stops_after_browser_daily_limit(monkeypatch) -> None:
     import app
     from triptwin.usage_guard import current_day
 
-    monkeypatch.setenv("TRIPTWIN_BROWSER_QUESTION_LIMIT", "3")
     store = {
         "version": 1,
         "active_id": None,
         "sessions": [],
-        "usage": {"date": current_day(), "questions": 3, "images": 0},
+        "usage": {"date": current_day(), "questions": 100, "images": 0},
         "answer_cache": {},
     }
 
@@ -341,5 +340,5 @@ def test_public_chat_stops_after_browser_daily_limit(monkeypatch) -> None:
         "还能继续问吗？", [], {"trip": load_cached_vision()["trip"]}, store
     )
 
-    assert "每天最多 3 次提问" in history[-1]["content"]
-    assert returned_store["usage"]["questions"] == 3
+    assert "每天最多 100 次提问" in history[-1]["content"]
+    assert returned_store["usage"]["questions"] == 100

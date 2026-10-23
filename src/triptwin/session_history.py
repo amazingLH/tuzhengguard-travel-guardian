@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from triptwin.usage_guard import normalize_browser_usage
+from triptwin.usage_guard import CHINA_TIME, normalize_browser_usage
 from triptwin.history_media import sanitize_previews
 
 
@@ -139,9 +139,13 @@ def history_choices(value: Any) -> list[tuple[str, str]]:
     choices: list[tuple[str, str]] = []
     for session in reversed(store["sessions"]):
         timestamp = str(session.get("updated_at") or "")
-        stamp = timestamp[5:16].replace("T", " ") if len(timestamp) >= 16 else ""
-        short_id = str(session["id"])[-8:]
-        choices.append((f"{session['title']} · {stamp} · {short_id}", session["id"]))
+        try:
+            stamp = datetime.fromisoformat(timestamp).astimezone(CHINA_TIME).strftime("%m/%d %H:%M")
+        except (ValueError, TypeError):
+            stamp = ""
+        snapshot = session.get("snapshot") or {}
+        count = sum(item.get("role") == "user" for item in snapshot.get("chat_history", []) if isinstance(item, dict))
+        choices.append((f"{session['title']}\n{count} 次提问 · {stamp}", session["id"]))
     return choices
 
 

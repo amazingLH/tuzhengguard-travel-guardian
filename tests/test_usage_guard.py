@@ -26,15 +26,15 @@ def test_default_public_limits(monkeypatch) -> None:
     ):
         monkeypatch.delenv(name, raising=False)
 
-    assert browser_limits() == {"questions": 30, "images": 15, "agent_runs": 15}
-    assert global_limits() == {"questions": 500, "images": 300, "agent_runs": 350}
+    assert browser_limits() == {"questions": 100, "images": 100, "agent_runs": 100}
+    assert global_limits() == {"questions": 0, "images": 0, "agent_runs": 0}
 
 
 def test_browser_usage_resets_and_stops_at_daily_limit(monkeypatch) -> None:
-    monkeypatch.setenv("TRIPTWIN_BROWSER_QUESTION_LIMIT", "3")
+    monkeypatch.setenv("TRIPTWIN_BROWSER_QUESTION_LIMIT", "3")  # legacy setting is ignored
     usage = normalize_browser_usage(None, day="2026-10-13")
 
-    for _ in range(3):
+    for _ in range(100):
         allowed, usage = browser_can_consume(
             usage, "questions", day="2026-10-13"
         )
@@ -48,7 +48,7 @@ def test_browser_usage_resets_and_stops_at_daily_limit(monkeypatch) -> None:
 
 @pytest.mark.parametrize(
     "kind,browser_limit,global_limit",
-    [("questions", 30, 500), ("images", 15, 300), ("agent_runs", 15, 350)],
+    [("questions", 100, 501), ("images", 100, 301), ("agent_runs", 100, 351)],
 )
 def test_new_limits_enforced_across_browser_and_server(
     monkeypatch, tmp_path, kind, browser_limit, global_limit
@@ -69,12 +69,10 @@ def test_new_limits_enforced_across_browser_and_server(
     )
     for _ in range(global_limit):
         assert reserve_global(kind, path=path, day=day)[0]
-    assert reserve_global(kind, path=path, day=day) == (
-        False, global_limit, global_limit
-    )
+    assert reserve_global(kind, path=path, day=day) == (True, global_limit + 1, 0)
 
 
-def test_global_usage_is_persisted_and_capped(monkeypatch, tmp_path) -> None:
+def test_global_usage_is_persisted_without_legacy_caps(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("TRIPTWIN_GLOBAL_QUESTION_LIMIT", "2")
     path = tmp_path / "usage.json"
 
@@ -84,11 +82,11 @@ def test_global_usage_is_persisted_and_capped(monkeypatch, tmp_path) -> None:
         "questions", path=path, day="2026-10-13"
     )
 
-    assert allowed is False
-    assert (count, limit) == (2, 2)
+    assert allowed is True
+    assert (count, limit) == (3, 0)
     with sqlite3.connect(path) as connection:
         assert connection.execute(
             "SELECT count FROM usage WHERE day=? AND scope=? AND kind=?",
             ("2026-10-13", "global", "questions"),
-        ).fetchone()[0] == 2
+        ).fetchone()[0] == 3
     assert reserve_global("questions", path=path, day="2026-10-14")[0] is True

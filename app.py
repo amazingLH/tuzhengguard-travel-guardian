@@ -55,6 +55,8 @@ from triptwin.history_media import (
 from triptwin.browser_secrets import persistent_secret
 from triptwin.branding import PRODUCT_TITLE
 from triptwin.runtime_agent import run_live_trip
+from triptwin.web_theme import WORKBENCH_CSS, hero_html
+from triptwin.service_errors import BILLING_UNAVAILABLE_MESSAGE, is_billing_failure
 from triptwin.exporter import export_trip_files
 from triptwin.input_completion import completion_rows, cancelled_orders, confirm_draft, validation_message
 from triptwin.functional_examples import example_kind, example_paths, example_trip, field_description
@@ -64,7 +66,6 @@ from triptwin.usage_guard import (
     browser_can_consume,
     browser_limits,
     consume_browser,
-    global_limits,
     release_reservation,
     reserve_client,
     reserve_global,
@@ -107,8 +108,6 @@ APP_CSS = """
 .guide-title-row h3 {margin:0}.example-free-note {font-size:12px;color:#9a5b00}
 .chat-panel {border:1px solid #c7d7f4;border-radius:16px;background:#f8fbff;padding:8px}
 .session-bar {border:1px solid #d9e2f2;border-radius:14px;background:#f8fafc;padding:10px 14px}
-.quota-card {background:#fff7ed;border:1px solid #fdba74;border-radius:14px;padding:12px 16px;color:#7c2d12}
-.quota-card b {color:#9a3412}
 .import-photo-list {max-height:340px;overflow-y:auto;overscroll-behavior:contain;border:1px solid #d6e2f2;border-radius:12px;background:#f5f8fe;scrollbar-gutter:stable}
 .import-photo-list figure {margin:0;padding:8px;border-bottom:1px solid #d6e2f2}
 .import-photo-list figure:last-child {border-bottom:0}
@@ -145,7 +144,6 @@ body::after {content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 .step-number {background:linear-gradient(140deg,#277ad6,#7151e8);box-shadow:0 4px 14px #536fe640}
 .step-nav a {color:#d5eaff;background:#1a3158b3;border:1px solid #8cbcff40;transition:background .2s,box-shadow .2s}
 .step-nav a:hover {background:#304778;box-shadow:0 0 18px #6fa9ff30}
-.quota-card {background:#2b3b58e8;color:#d3dfef;border-color:#7699cd55;line-height:1.8;box-shadow:0 8px 26px #0002}.quota-card b {color:#a9d9ff}
 #service-notice {background:#253751c9;border:1px solid #799ecb33;border-radius:14px;padding:10px 16px;color:#cfdeee!important}
 #service-notice p,#service-notice strong {color:#cfdeee!important}#service-notice blockquote {border-color:#70b9ef}
 #session-management {background:#eaf3fff2;border:1px solid #bbdcff80;border-radius:14px;box-shadow:0 8px 25px #0002}
@@ -154,7 +152,7 @@ footer {color:#b7cfe4!important}footer a,footer button {color:#b7cfe4!important}
 @keyframes aurora-drift {from {transform:translate3d(-2%,-1%,0) rotate(-3deg)}to {transform:translate3d(2%,2%,0) rotate(3deg)}}
 @media(prefers-reduced-motion:reduce) {body::before {animation:none;will-change:auto}.step-nav a {transition:none}}
 @media(max-width:640px) {body::before {animation:none;will-change:auto}.hero {padding:20px}}
-"""
+""" + WORKBENCH_CSS
 
 _LOCAL_ENV = dotenv_values(PROJECT_ROOT / ".env")
 _LOCAL_SECRET_DIR = Path(os.getenv("LOCALAPPDATA") or os.getenv("XDG_STATE_HOME") or tempfile.gettempdir()) / "triptwin" / hashlib.sha256(str(PROJECT_ROOT).encode()).hexdigest()[:16]
@@ -189,7 +187,7 @@ def load_railway_example(kind):
 
 
 def _sample_panel(markdown: str, title: str) -> str:
-    """Label cached competition evidence so it cannot be mistaken for user data."""
+    """Label cached example evidence so it cannot be mistaken for user data."""
 
     body = markdown.split("\n", 1)[1].lstrip() if "\n" in markdown else markdown
     return (
@@ -471,7 +469,6 @@ def build_twin_guarded(
         raise gr.Error(str(exc) + " 本次未调用模型，不消耗解析次数。") from None
     store, _ = ensure_active_session(browser_store)
     client_key = _anonymous_client_key(request)
-    client_reserved = False
     global_reserved = False
     if not _is_functional_example(paths):
         allowed, usage = browser_can_consume(store.get("usage"), "images")
@@ -484,19 +481,13 @@ def build_twin_guarded(
             client_allowed, _, client_limit = reserve_client(client_key, "images")
             if not client_allowed:
                 raise gr.Error(f"当前匿名访客今日已达到 {client_limit} 次图片解析上限。")
-            client_reserved = True
-        globally_allowed, _, global_limit = reserve_global("images")
-        if not globally_allowed:
-            if client_reserved:
-                release_reservation("client", client_key, "images")
-            raise gr.Error(
-                f"今日全站图片解析已达到 {global_limit} 次；"
-                "合成示例、确定性风险检查和已生成结果仍可查看。"
-            )
+        reserve_global("images")
         global_reserved = True
     try:
         result = build_twin(paths)
     except Exception as exc:
+        if is_billing_failure(exc):
+            raise gr.Error(BILLING_UNAVAILABLE_MESSAGE) from None
         quota_note = " 已发起云端解析请求，本次计入解析次数；请勿连续重试，先确认配置或图片内容。" if global_reserved else ""
         if isinstance(exc, gr.Error):
             raise
@@ -771,6 +762,8 @@ def generate_plan_b(
     try:
         result = run_live_trip(state["trip"])
     except Exception as exc:
+        if is_billing_failure(exc):
+            raise gr.Error(BILLING_UNAVAILABLE_MESSAGE) from None
         raise gr.Error(
             "当前行程实时核验失败，途证哨 已停止生成，未套用任何示例数据："
             + str(exc)
@@ -944,17 +937,11 @@ def generate_plan_b_guarded(
             f"当前浏览器今天最多执行 {browser_limits()['agent_runs']} 次实时工具核验。"
         )
     client_key = _anonymous_client_key(request)
-    client_reserved = False
     if client_key:
         client_allowed, _, client_limit = reserve_client(client_key, "agent_runs")
         if not client_allowed:
             raise gr.Error(f"当前匿名访客今日已达到 {client_limit} 次实时工具核验上限。")
-        client_reserved = True
-    global_allowed, _, global_limit = reserve_global("agent_runs")
-    if not global_allowed:
-        if client_reserved:
-            release_reservation("client", client_key, "agent_runs")
-        raise gr.Error(f"今日全站实时工具核验已达到 {global_limit} 次。")
+    reserve_global("agent_runs")
     try:
         result = generate_plan_b(state, confirmed)
     except Exception as exc:
@@ -987,16 +974,14 @@ def run_live_inspection_guarded(
     client_key = _anonymous_client_key(request)
     if client_key and not reserve_client(client_key, "agent_runs")[0]:
         raise gr.Error("当前匿名访客今日实时核验次数已用完。")
-    global_allowed, _, global_limit = reserve_global("agent_runs")
-    if not global_allowed:
-        if client_key:
-            release_reservation("client", client_key, "agent_runs")
-        raise gr.Error(f"今日全站实时核验已达到 {global_limit} 次。")
+    reserve_global("agent_runs")
     try:
         analysis = analyze_trip(state["trip"], include_cached_amap=False)[1]
         needs_candidates = analysis.risk_count > 0 and not schedule_options(state["trip"])
         result = run_live_trip(state["trip"], inspect_only=not needs_candidates)
     except Exception as exc:
+        if is_billing_failure(exc):
+            raise gr.Error(BILLING_UNAVAILABLE_MESSAGE) from None
         raise gr.Error("实时核验未完成：" + str(exc)[:500] + " 本次已发起云端请求，计入核验次数；本地风险检查仍可使用。") from None
     updated = dict(state)
     updated.update(trip=result.trip, live_inspection=result.inspection.model_dump(mode="json"), live_generated_at=result.generated_at)
@@ -1055,8 +1040,12 @@ def answer_question(
                 amap_inspection=state.get("live_inspection"),
             ),
         )
-    except Exception:
-        answer = MODEL_UNAVAILABLE_REPLY
+    except Exception as exc:
+        if is_billing_failure(exc):
+            gr.Warning(BILLING_UNAVAILABLE_MESSAGE, duration=12)
+            answer = BILLING_UNAVAILABLE_MESSAGE
+        else:
+            answer = MODEL_UNAVAILABLE_REPLY
     conversation.append({"role": "assistant", "content": answer})
     return "", conversation
 
@@ -1169,21 +1158,12 @@ def answer_question_guarded(
         store["answer_cache"] = dict(list(cache.items())[-50:])
         return "", conversation, store
 
-    globally_allowed, _, global_limit = reserve_global("questions")
-    if not globally_allowed:
-        if client_reserved:
-            release_reservation("client", client_key, "questions")
-        return _quota_answer(
-            text,
-            history,
-            f"今日全站大模型问答已达到 {global_limit} 次",
-            store,
-        )
+    reserve_global("questions")
 
     _, conversation = answer_question(text, history, state)
     store["usage"] = consume_browser(usage, "questions")
     answer = conversation[-1].get("content") if conversation else None
-    if isinstance(answer, str) and answer.strip() and answer != MODEL_UNAVAILABLE_REPLY:
+    if isinstance(answer, str) and answer.strip() and answer not in {MODEL_UNAVAILABLE_REPLY, BILLING_UNAVAILABLE_MESSAGE}:
         cache = dict(store.get("answer_cache") or {})
         cache[cache_key] = answer
         store["answer_cache"] = dict(list(cache.items())[-50:])
@@ -1342,8 +1322,8 @@ def _session_snapshot(
     }
 
 
-def _history_update(store: dict[str, Any]) -> gr.Dropdown:
-    return gr.Dropdown(
+def _history_update(store: dict[str, Any]) -> gr.Radio:
+    return gr.Radio(
         choices=history_choices(store),
         value=store["active_id"],
         label="历史会话",
@@ -1352,9 +1332,7 @@ def _history_update(store: dict[str, Any]) -> gr.Dropdown:
 
 def _session_badge(session: dict[str, Any]) -> str:
     return (
-        "**当前页面 Session ID：** `"
-        + str(session["id"])
-        + "`  \n选择历史会话即可自动切换。行程、解析结果、风险、Plan B、对话及小尺寸截图预览保存在本浏览器；服务器原图仍定期清理。"
+        "当前会话\n\n**" + escape(str(session.get("title") or "新旅行会话")) + "**"
     )
 
 
@@ -1604,30 +1582,17 @@ def create_app() -> gr.Blocks:
         # tab-local server State as the authority between callbacks, then mirror
         # updates to localStorage rather than reading a stale browser snapshot.
         history_store = gr.State({})
-        gr.HTML(f"<div class='hero'><h1>{PRODUCT_TITLE}</h1><p>把行程截图变成 TripGraph，结合真实 FlyAI 与高德 MCP 证据发现衔接、日期、预算、天气和体力风险，并生成可验证 Plan B。</p></div>")
-        gr.HTML(
-            "<div class='quota-card'><b>使用额度说明：</b>作者腰包扁扁，短期内可承担的费用有限，"
-            "后续将逐步增加 AI 使用次数。"
-            f"当前版本每个浏览器每天最多 {browser_limits()['questions']} 次提问、"
-            f"{browser_limits()['images']} 次自行上传图片解析；"
-            f"全站每天最多 {global_limits()['questions']} 次大模型问答、"
-            f"{global_limits()['images']} 次图片解析；每位访客每天最多 "
-            f"{browser_limits()['agent_runs']} 次实时高德/FlyAI 核验，"
-            f"全站最多 {global_limits()['agent_runs']} 次。重复问题会复用缓存。"
-            "达到限制后，合成示例、确定性风险检查和已生成结果仍可查看。</div>"
-        )
+        compact_screen = gr.Checkbox(value=False, visible=False)
+        gr.HTML(hero_html(PRODUCT_TITLE))
         gr.Markdown(f"> **隐私与服务声明：** {DISCLAIMER}", elem_id="service-notice")
         gr.HTML("<nav class='step-nav' aria-label='使用步骤'><a href='#step-import'>1 导入行程</a><a href='#step-build'>2 构建与校对</a><a href='#step-risk'>3 检查风险</a><a href='#step-plan'>4 生成 Plan B</a><a href='#step-chat'>5 提问与导出</a></nav>")
-        with gr.Accordion("我的会话 · 新建 / 查看历史", open=False, elem_id="session-management"):
-            with gr.Row(elem_classes=["session-bar"]):
-                history_select = gr.Dropdown(
-                    choices=[], label="历史会话", interactive=True, scale=3
-                )
-                new_session_button = gr.Button(
-                    "＋ 新建独立会话", variant="secondary"
-                )
-            session_badge = gr.Markdown("正在初始化独立会话……")
-            with gr.Row():
+        with gr.Sidebar(label="会话工作台", open=False, width=285, position="left", elem_id="session-management") as session_sidebar:
+            gr.Markdown("## 会话工作台")
+            session_badge = gr.Markdown("正在初始化独立会话……", elem_classes=["session-current"])
+            new_session_button = gr.Button("＋ 新建独立会话", variant="primary", elem_id="new-session-button")
+            history_select = gr.Radio(choices=[], label="历史会话", interactive=True, elem_id="history-select")
+            gr.Markdown("点击历史即可恢复行程、解析结果、风险、Plan B 和对话。记录仅保存在当前浏览器。", elem_classes=["history-help"])
+            with gr.Accordion("管理历史记录", open=False, elem_classes=["history-tools"]):
                 delete_session_button = gr.Button("删除当前会话", variant="stop")
                 clear_sessions_button = gr.Button("清空全部历史", variant="stop")
         with gr.Column(elem_id="step-import", elem_classes=["step-card"]):
@@ -1810,6 +1775,11 @@ def create_app() -> gr.Blocks:
         # In particular, a background history write must never mask an already
         # rendered confidence table or tool evidence with a full loading overlay.
         local_event = {"queue": False, "show_progress": "hidden"}
+        demo.load(
+            lambda compact: gr.Sidebar(open=not compact),
+            inputs=[compact_screen], outputs=[session_sidebar],
+            js="() => [window.innerWidth <= 768]", api_name=False, **local_event,
+        )
         # Keep user actions which can raise gr.Error on the queued transport:
         # this Gradio release drops toast metadata on direct HTTP failures.
         # Their progress is scoped to one small area, never the whole view.

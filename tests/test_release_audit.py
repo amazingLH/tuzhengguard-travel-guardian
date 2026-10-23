@@ -152,7 +152,7 @@ def test_corrupt_image_is_rejected_before_quota(monkeypatch, tmp_path):
 
 def test_failed_cloud_attempts_cannot_bypass_server_limit(monkeypatch, tmp_path):
     import app
-    monkeypatch.setenv("TRIPTWIN_BROWSER_IMAGE_LIMIT", "2")
+    monkeypatch.setattr("triptwin.usage_guard.browser_limits", lambda: {"questions": 100, "images": 2, "agent_runs": 100})
     path = tmp_path / "test.png"
     Image.new("RGB", (20, 20), "white").save(path)
     monkeypatch.setenv("TRIPTWIN_USAGE_COUNTER_PATH", str(tmp_path / "counts.sqlite3"))

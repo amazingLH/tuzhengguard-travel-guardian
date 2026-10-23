@@ -23,19 +23,13 @@ def current_day() -> str:
 
 
 def browser_limits() -> dict[UsageKind, int]:
-    return {
-        "questions": _positive_int("TRIPTWIN_BROWSER_QUESTION_LIMIT", 30),
-        "images": _positive_int("TRIPTWIN_BROWSER_IMAGE_LIMIT", 15),
-        "agent_runs": _positive_int("TRIPTWIN_BROWSER_AGENT_LIMIT", 15),
-    }
+    # Fixed public policy; legacy deployment overrides must not retain old caps.
+    return {"questions": 100, "images": 100, "agent_runs": 100}
 
 
 def global_limits() -> dict[UsageKind, int]:
-    return {
-        "questions": _positive_int("TRIPTWIN_GLOBAL_QUESTION_LIMIT", 500),
-        "images": _positive_int("TRIPTWIN_GLOBAL_IMAGE_LIMIT", 300),
-        "agent_runs": _positive_int("TRIPTWIN_GLOBAL_AGENT_LIMIT", 350),
-    }
+    # Zero explicitly means unlimited, including with old environment variables.
+    return {"questions": 0, "images": 0, "agent_runs": 0}
 
 
 def normalize_browser_usage(value: object, *, day: str | None = None) -> dict[str, object]:
@@ -124,7 +118,7 @@ def _reserve(
             (today, scope, subject, kind),
         ).fetchone()
         count = int(row[0]) if row else 0
-        if count >= limit:
+        if limit > 0 and count >= limit:
             connection.rollback()
             return False, count, limit
         new_count = count + 1
@@ -154,14 +148,6 @@ def _connect(path: Path) -> sqlite3.Connection:
 def _counter_path() -> Path:
     configured = os.getenv("TRIPTWIN_USAGE_COUNTER_PATH")
     return Path(configured) if configured else Path(tempfile.gettempdir()) / "triptwin-usage.sqlite3"
-
-
-def _positive_int(name: str, default: int) -> int:
-    try:
-        value = int(os.getenv(name, str(default)))
-    except ValueError:
-        return default
-    return value if value > 0 else default
 
 
 def _safe_count(value: object) -> int:

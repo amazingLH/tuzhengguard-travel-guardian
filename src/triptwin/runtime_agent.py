@@ -1,6 +1,6 @@
 """Per-trip live Amap/FlyAI orchestration for the public application.
 
-No cached competition artifact is read here.  Every returned fact is derived
+No cached example artifact is read here. Every returned fact is derived
 from the current TripGraph and the current Managed Agent turn.
 """
 
@@ -75,6 +75,9 @@ def run_live_trip(
             artifact = (
                 client.download_json_file(marked_file_id) if marked_file_id else None
             )
+    from triptwin.service_errors import BILLING_UNAVAILABLE_MESSAGE, is_billing_failure
+    if is_billing_failure(run.errors) or is_billing_failure(run.tool_outputs):
+        raise RuntimeError(BILLING_UNAVAILABLE_MESSAGE)
     if run.errors or run.status != "end_turn":
         raise RuntimeError("智能体未正常完成本次核验，请稍后重试；不会将未完成的工具结果标记为成功。")
     if artifact is None and not inspect_only:
