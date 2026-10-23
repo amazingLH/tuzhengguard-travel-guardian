@@ -44,12 +44,11 @@ WORKBENCH_CSS = """
 #session-management .session-title {display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e3edfc}
 #session-management .session-meta {display:block;font-size:11px;color:#9cb4d0;margin-top:4px;white-space:nowrap}
 #session-management .session-menu {flex:0 0 32px;margin:0 6px 0 0}
-#session-management .session-menu summary {list-style:none;display:grid;place-items:center;width:30px;height:32px;border-radius:7px;cursor:pointer;color:#abc3e7;font-size:24px;line-height:1}
-#session-management .session-menu summary::-webkit-details-marker {display:none}
-#session-management .session-menu summary:hover,#session-management .session-menu[open] summary {background:#b7d2ff1a;color:#eff7ff}
-#session-management .session-row:has(.session-menu[open]) {padding-bottom:83px}
-#session-management .session-popup {position:absolute;top:48px;right:6px;z-index:10;width:132px;box-sizing:border-box;background:#263957;border:1px solid #89b3ed55;box-shadow:0 8px 20px #080f2055;border-radius:10px;padding:5px}
-#session-management .session-popup button {display:block;box-sizing:border-box;width:100%;padding:7px 12px;border:0;border-radius:6px;text-align:left;background:transparent;color:#e0ebfc;font:inherit;font-size:13px;cursor:pointer}
+#session-management .session-more {display:grid;place-items:center;width:30px;height:32px;padding:0;border:0;background:transparent;border-radius:8px;cursor:pointer;color:#abc3e7;font:inherit;font-size:24px;line-height:1}
+#session-management .session-more:hover,#session-management .session-more[aria-expanded="true"] {background:#b7d2ff1a;color:#eff7ff}
+#session-management .session-popup {position:fixed;inset:auto;margin:0;width:168px;box-sizing:border-box;background:linear-gradient(145deg,#283d5bfa,#23334ffa);border:1px solid #a1bde438;box-shadow:0 14px 36px #070e205c,0 2px 8px #060c1829;border-radius:12px;padding:6px;overflow:visible;backdrop-filter:blur(14px)}
+#session-management .session-popup::backdrop {background:transparent}
+#session-management .session-popup button {display:block;box-sizing:border-box;width:100%;min-height:40px;padding:10px 12px;border:0;border-radius:7px;text-align:left;background:transparent;color:#e0ebfc;font:inherit;font-size:13px;cursor:pointer}
 #session-management .session-popup button:hover {background:#a7c7ff1a}
 #session-management .session-popup .session-delete {color:#ffb7c3}
 #session-management .session-rename {padding:0 10px 10px}

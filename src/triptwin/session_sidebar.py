@@ -15,13 +15,13 @@ def session_card_html(session: dict[str, Any], metadata: str, *, current: bool =
         <button type="button" class="session-open" data-action="open"{current_attr} aria-label="打开会话：{title}">
           <span class="session-title">{title}</span><span class="session-meta">{escape(metadata)}</span>
         </button>
-        <details class="session-menu" name="session-options">
-          <summary aria-label="会话「{title}」的更多操作" title="更多操作"><span aria-hidden="true">⋯</span></summary>
-          <div class="session-popup" role="menu" aria-label="会话操作">
+        <div class="session-menu">
+          <button type="button" class="session-more" data-action="menu" popovertarget="{identifier}-menu" aria-haspopup="menu" aria-expanded="false" aria-label="会话「{title}」的更多操作" title="更多操作"><span aria-hidden="true">⋯</span></button>
+          <div id="{identifier}-menu" class="session-popup" popover="auto" role="menu" aria-label="会话操作">
             <button type="button" role="menuitem" data-action="rename">重命名</button>
-            <button type="button" role="menuitem" data-action="delete" class="session-delete">删除</button>
+            <button type="button" role="menuitem" data-action="delete" class="session-delete">删除会话</button>
           </div>
-        </details>
+        </div>
       </div>
       <form class="session-rename" hidden>
         <label>会话名称<input name="title" value="{title}" maxlength="60" required autocomplete="off"></label>
@@ -48,6 +48,20 @@ def history_sidebar_html(store: dict[str, Any]) -> str:
 
 SESSION_ACTION_JS = """
 // Event delegation survives autosave replacing card markup.
+function closeMenus() {
+  element.querySelectorAll('.session-popup:popover-open').forEach(menu => menu.hidePopover());
+}
+function positionMenu(menu, card) {
+  const anchor = card.getBoundingClientRect();
+  const popup = menu.getBoundingClientRect();
+  const gap = 8;
+  const left = Math.max(gap, Math.min(anchor.right - popup.width, window.innerWidth - popup.width - gap));
+  const below = anchor.bottom + gap;
+  const top = below + popup.height <= window.innerHeight - gap
+    ? below : Math.max(gap, anchor.top - popup.height - gap);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
 element.addEventListener('click', (event) => {
   const button = event.target.closest('button[data-action]');
   if (!button || !element.contains(button)) return;
@@ -55,9 +69,10 @@ element.addEventListener('click', (event) => {
   if (!card) return;
   const id = card.dataset.sessionId;
   const action = button.dataset.action;
-  const menu = card.querySelector('details');
+  const menu = card.querySelector('.session-popup');
   const form = card.querySelector('form');
-  if (menu) menu.open = false;
+  if (action === 'menu') return; // Native popovertarget handles toggle and focus.
+  if (menu.matches(':popover-open')) menu.hidePopover();
   if (action === 'open' && button.getAttribute('aria-current') !== 'true') trigger('open_session', {id});
   if (action === 'delete') trigger('manage_session', {id, action: 'delete'});
   if (action === 'rename') {
@@ -71,20 +86,27 @@ element.addEventListener('submit', (event) => {
   if (!event.target.matches('.session-rename')) return;
   event.preventDefault();
   const form = event.target;
-  const title = form.querySelector('input').value.trim();
-  if (!title) { form.querySelector('input').reportValidity(); return; }
+  const input = form.querySelector('input');
+  const title = input.value.trim();
+  if (!title) { input.value = ''; input.reportValidity(); return; }
   trigger('manage_session', {id: form.closest('[data-session-id]').dataset.sessionId, action: 'rename', title});
 });
 element.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
   const card = event.target.closest('[data-session-id]');
   if (!card) return;
-  card.querySelector('details').open = false;
+  closeMenus();
   card.querySelector('form').hidden = true;
-  card.querySelector('summary').focus();
+  card.querySelector('.session-more').focus();
 });
-element.addEventListener('focusout', (event) => {
-  const menu = event.target.closest('details');
-  if (menu && !menu.contains(event.relatedTarget)) menu.open = false;
-});
+element.addEventListener('toggle', (event) => {
+  const menu = event.target;
+  if (!menu.matches('.session-popup')) return;
+  if (menu.matches(':popover-open')) positionMenu(menu, menu.closest('.session-card'));
+  menu.closest('.session-card').querySelector('.session-more')
+    .setAttribute('aria-expanded', String(menu.matches(':popover-open')));
+}, true);
+element.addEventListener('scroll', closeMenus, true);
+element.closest('.sidebar-content')?.addEventListener('scroll', closeMenus, {passive: true});
+window.addEventListener('resize', closeMenus);
 """
