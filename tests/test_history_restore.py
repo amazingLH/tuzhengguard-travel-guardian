@@ -96,7 +96,7 @@ def test_history_selection_is_user_input_only_and_has_no_open_button():
     assert not any(c.get("props", {}).get("value") == "打开所选会话" for c in config["components"])
     deps = [d for d in config["dependencies"] if app.demo.fns[d["id"]].fn is app.open_history_session]
     assert len(deps) == 1
-    assert deps[0]["targets"][0][1] == "input"
+    assert deps[0]["targets"][0][1] == "open_session"
     assert len(deps[0]["outputs"]) == len(app.initialize_session_history(None))
 
 

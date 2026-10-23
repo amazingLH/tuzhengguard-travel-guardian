@@ -73,6 +73,8 @@ def save_active_session(value: Any, snapshot: dict[str, Any]) -> dict[str, Any]:
     trip_state = session["snapshot"].get("trip_state")
     trip = (trip_state.get("trip") or trip_state.get("draft_trip")) if isinstance(trip_state, dict) else None
     title = trip.get("title") if isinstance(trip, dict) else None
+    if session.get("title_is_custom"):
+        return store
     if isinstance(title, str) and title.strip():
         session["title"] = title.strip()[:60]
     elif session["snapshot"].get("image_previews"):
@@ -100,14 +102,33 @@ def delete_session(value: Any, session_id: str) -> tuple[dict[str, Any], dict[st
     """Delete one browser-local session and select/create a safe replacement."""
 
     store = ensure_store(value)
+    if _find_in_store(store, session_id) is None:
+        raise ValueError("所选会话不存在或已删除。")
     store["sessions"] = [
         session for session in store["sessions"] if session["id"] != session_id
     ]
     if store["sessions"]:
-        store["active_id"] = store["sessions"][-1]["id"]
-        return store, copy.deepcopy(store["sessions"][-1])
+        active = _find_in_store(store, store.get("active_id")) or store["sessions"][-1]
+        store["active_id"] = active["id"]
+        return store, copy.deepcopy(active)
     store["active_id"] = None
     return create_session(store)
+
+
+def rename_session(value: Any, session_id: str, title: str) -> dict[str, Any]:
+    """Persist a user-chosen name independently of the itinerary title."""
+    if not isinstance(title, str) or not title.strip():
+        raise ValueError("请输入会话名称。")
+    title = title.strip()
+    if len(title) > 60:
+        raise ValueError("会话名称最多 60 个字符。")
+    store = ensure_store(value)
+    session = _find_in_store(store, session_id)
+    if session is None:
+        raise ValueError("所选会话不存在或已删除。")
+    session["title"] = title
+    session["title_is_custom"] = True
+    return store
 
 
 def clear_sessions(value: Any) -> tuple[dict[str, Any], dict[str, Any]]:

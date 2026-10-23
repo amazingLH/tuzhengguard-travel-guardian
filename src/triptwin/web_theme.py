@@ -23,23 +23,43 @@ def hero_html(title: str) -> str:
 
 WORKBENCH_CSS = """
 /* A dedicated history column, with a native drawer on compact screens. */
-#session-management {box-sizing:border-box;background:linear-gradient(170deg,#f3f0ff,#e8f3ff)!important;border-right:1px solid #cbd9f2!important;padding:18px 14px!important;color:#253651}
+#session-management {box-sizing:border-box;background:radial-gradient(ellipse at 0% 0%,#25567355,transparent 60%),linear-gradient(165deg,#1d304e,#202940 65%,#2c2c4a)!important;border-right:1px solid #8cbcff33!important;padding:18px 14px!important;color:#dceafd;box-shadow:8px 0 32px #0b142433!important}
 #session-management .sidebar-content {gap:14px;padding:12px 16px 20px 0!important}
-#session-management h2 {font-size:20px;color:#5641cc;margin:4px 0 12px}
-#session-management .prose {color:#53617b;font-size:13px;overflow-wrap:anywhere}
-#session-management .block.session-current {padding:12px;background:#ffffff90;border:1px solid #dedaf6;border-radius:12px}
-#session-management .session-current strong {color:#35415d}
-#session-management #new-session-button {background:linear-gradient(115deg,#6250df,#7751d9)!important;color:white!important;border:0!important;box-shadow:0 6px 16px #6552d526;min-height:44px}
-#history-select {background:transparent;border:0;padding:0;min-width:0!important}
-#history-select > .wrap:not([data-testid="status-tracker"]) {display:flex!important;flex-direction:column!important;flex-wrap:nowrap!important;gap:8px!important;max-height:48vh;overflow-y:auto;overflow-x:hidden;padding:2px;box-sizing:border-box}
-#history-select label {width:100%;box-sizing:border-box;min-width:0!important;border:1px solid #d8d9ee!important;background:#ffffffa8!important;border-radius:12px!important;padding:12px 10px!important;transition:border-color .2s,background .2s}
-#history-select label:has(input:checked) {background:#e9e3ff!important;border-color:#8970ed!important;box-shadow:0 0 0 1px #8970ed30}
-#history-select label {flex:0 0 auto!important}
-#history-select label span {min-width:0;white-space:pre-line!important;overflow-wrap:anywhere;font-size:13px!important;color:#35415d!important;line-height:1.65}
-#history-select input {accent-color:#7352da;flex-shrink:0}
-#session-management .history-help {font-size:12px;color:#68758b}
-#session-management .history-tools button {font-size:12px;min-height:34px}
-#session-management .history-tools {min-width:0!important;overflow-x:hidden!important}
+#session-management h2 {font-size:20px;color:#d3eaff;margin:4px 0 18px}
+#session-management .prose {color:#c2d4ed;overflow-wrap:anywhere}
+#session-management .session-section-heading h3 {font-size:12px;letter-spacing:1px;color:#91aecf;margin:0 0 4px}
+#session-management #new-session-button {background:linear-gradient(115deg,#495fc0,#6854b8)!important;color:#f5f7ff!important;border:1px solid #b5baff33!important;box-shadow:0 6px 16px #09112630;min-height:42px}
+#session-management .toggle-button {background:#223752!important;border-color:#86bbec40!important}
+#session-management .chevron-left {border-color:#c9e5ff!important}
+#history-select,#current-session-card {background:transparent!important;border:0!important;padding:0!important;min-width:0!important;overflow:visible!important}
+#session-management .session-divider {height:1px;border:0;background:linear-gradient(90deg,#92b8e150,#92b8e110);margin:6px 0 8px}
+#session-management .session-history-heading {display:flex;align-items:center;gap:9px;font-size:12px;color:#91aecf;margin:0 0 12px;letter-spacing:1px}
+#session-management .session-history-heading span {font-size:11px;background:#a6c8ff14;padding:1px 7px;border-radius:12px;color:#aac5e5}
+#session-management .session-history-list {display:flex;flex-direction:column;gap:10px;max-height:calc(100dvh - 330px);overflow-y:auto;overflow-x:hidden;padding:1px 2px 12px 0;scrollbar-width:thin;scrollbar-color:#688caf66 transparent}
+#session-management .session-card {position:relative;box-sizing:border-box;width:100%;min-width:0;border:1px solid #94b9ef26;border-radius:12px;background:#8cbcff08;transition:border-color .2s,background .2s}
+#session-management .session-card:hover {background:#8cbcff12;border-color:#94b9ef55}
+#session-management .session-card.is-current {background:linear-gradient(120deg,#6a73cf26,#60a4c714);border-color:#91b5ff66;box-shadow:inset 0 0 18px #96b9ff06}
+#session-management .session-row {display:flex;align-items:center;position:relative;min-width:0}
+#session-management .session-open {flex:1;min-width:0;text-align:left;border:0;background:transparent;color:#dfebfc;padding:12px 4px 12px 12px;cursor:pointer;font-family:inherit;line-height:1.6;border-radius:11px}
+#session-management .session-title {display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e3edfc}
+#session-management .session-meta {display:block;font-size:11px;color:#9cb4d0;margin-top:4px;white-space:nowrap}
+#session-management .session-menu {flex:0 0 32px;margin:0 6px 0 0}
+#session-management .session-menu summary {list-style:none;display:grid;place-items:center;width:30px;height:32px;border-radius:7px;cursor:pointer;color:#abc3e7;font-size:24px;line-height:1}
+#session-management .session-menu summary::-webkit-details-marker {display:none}
+#session-management .session-menu summary:hover,#session-management .session-menu[open] summary {background:#b7d2ff1a;color:#eff7ff}
+#session-management .session-row:has(.session-menu[open]) {padding-bottom:83px}
+#session-management .session-popup {position:absolute;top:48px;right:6px;z-index:10;width:132px;box-sizing:border-box;background:#263957;border:1px solid #89b3ed55;box-shadow:0 8px 20px #080f2055;border-radius:10px;padding:5px}
+#session-management .session-popup button {display:block;box-sizing:border-box;width:100%;padding:7px 12px;border:0;border-radius:6px;text-align:left;background:transparent;color:#e0ebfc;font:inherit;font-size:13px;cursor:pointer}
+#session-management .session-popup button:hover {background:#a7c7ff1a}
+#session-management .session-popup .session-delete {color:#ffb7c3}
+#session-management .session-rename {padding:0 10px 10px}
+#session-management .session-rename[hidden] {display:none!important}
+#session-management .session-rename label {display:block;color:#a9c1df;font-size:11px}
+#session-management .session-rename input {display:block;width:100%;box-sizing:border-box;margin-top:5px;background:#13243b;color:#f0f6ff;border:1px solid #8da8e977;border-radius:7px;padding:8px;font:inherit;font-size:13px}
+#session-management .session-rename-actions {display:flex;gap:7px;margin-top:8px}
+#session-management .session-rename-actions button {padding:5px 9px;border:1px solid #9ab5ec44;border-radius:6px;background:#7185da22;color:#dce9ff;font:inherit;font-size:12px;cursor:pointer}
+#session-management .session-empty {font-size:12px;color:#8099b7;padding:10px 0}
+#session-management :is(button,summary,input):focus-visible {outline:2px solid #9abaff;outline-offset:2px}
 @media(max-width:768px) {#session-management {width:100%!important;left:-100%!important}}
 .mission-hero {display:flex;align-items:center;gap:20px;min-height:240px;padding:28px 32px!important}
 .hero-copy {flex:1;min-width:0;position:relative;z-index:1}

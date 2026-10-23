@@ -44,7 +44,7 @@ from triptwin.session_history import (
     create_session,
     delete_session,
     ensure_active_session,
-    history_choices,
+    rename_session,
     save_active_session,
     switch_session,
 )
@@ -56,6 +56,7 @@ from triptwin.browser_secrets import persistent_secret
 from triptwin.branding import PRODUCT_TITLE
 from triptwin.runtime_agent import run_live_trip
 from triptwin.web_theme import WORKBENCH_CSS, hero_html
+from triptwin.session_sidebar import SESSION_ACTION_JS, current_session_html, history_sidebar_html
 from triptwin.service_errors import BILLING_UNAVAILABLE_MESSAGE, is_billing_failure
 from triptwin.exporter import export_trip_files
 from triptwin.input_completion import completion_rows, cancelled_orders, confirm_draft, validation_message
@@ -1322,18 +1323,12 @@ def _session_snapshot(
     }
 
 
-def _history_update(store: dict[str, Any]) -> gr.Radio:
-    return gr.Radio(
-        choices=history_choices(store),
-        value=store["active_id"],
-        label="历史会话",
-    )
+def _history_update(store: dict[str, Any]) -> gr.HTML:
+    return gr.HTML(value=history_sidebar_html(store))
 
 
 def _session_badge(session: dict[str, Any]) -> str:
-    return (
-        "当前会话\n\n**" + escape(str(session.get("title") or "新旅行会话")) + "**"
-    )
+    return current_session_html(session)
 
 
 def _session_view(session: dict[str, Any]) -> tuple[Any, ...]:
@@ -1531,7 +1526,10 @@ def open_history_session(
     completion_values: Any = None,
     question_text: str | None = None,
     local_choice: str | None = None,
+    event: gr.EventData = None,
 ) -> tuple[Any, ...]:
+    if event is not None:
+        target_id = event._data.get("id") if isinstance(event._data, dict) else None
     if not target_id or target_id == (browser_store or {}).get("active_id"):
         # Dropdown blur can emit input even when selection never changed.
         # Leave ALL components untouched, especially File and unsaved edits.
@@ -1568,6 +1566,48 @@ def clear_all_history_sessions(browser_store: Any) -> tuple[Any, ...]:
     return store, _history_update(store), _session_badge(session), *_restored_history_view(session)
 
 
+def manage_history_session(
+    browser_store: Any,
+    trip_state: dict[str, Any] | None,
+    status: str | None,
+    confirmed: bool,
+    risks: str | None,
+    plan_b: str | None,
+    trace: str | None,
+    chat_history: list[dict[str, Any]] | None,
+    amap_status: str | None,
+    inspection_status: str | None,
+    image_previews: Any = None,
+    editor_text: str | None = None,
+    completion_values: Any = None,
+    question_text: str | None = None,
+    local_choice: str | None = None,
+    event: gr.EventData = None,
+) -> tuple[Any, ...]:
+    data = event._data if event is not None and isinstance(event._data, dict) else {}
+    target_id = data.get("id")
+    action = data.get("action")
+    if not isinstance(target_id, str) or action not in {"rename", "delete"}:
+        raise gr.Error("无效的会话操作，请刷新页面后重试。")
+    # Preserve unsent questions, edits and form values before acting on any row.
+    store = persist_current_session(
+        browser_store, trip_state, status, confirmed, risks, plan_b, trace,
+        chat_history, amap_status, inspection_status, image_previews,
+        editor_text, completion_values, question_text, local_choice,
+    )[0]
+    deleting_current = action == "delete" and target_id == store["active_id"]
+    try:
+        if action == "rename":
+            store = rename_session(store, target_id, data.get("title"))
+            session = next(item for item in store["sessions"] if item["id"] == store["active_id"])
+        else:
+            store, session = delete_session(store, target_id)
+    except ValueError as exc:
+        raise gr.Error(str(exc)) from None
+    view = _restored_history_view(session) if deleting_current else tuple(gr.skip() for _ in range(HISTORY_VIEW_OUTPUT_COUNT))
+    return store, _history_update(store), _session_badge(session), *view
+
+
 def create_app() -> gr.Blocks:
     with gr.Blocks(title=PRODUCT_TITLE, delete_cache=(3600, 3600)) as demo:
         state = gr.State({})
@@ -1588,13 +1628,11 @@ def create_app() -> gr.Blocks:
         gr.HTML("<nav class='step-nav' aria-label='使用步骤'><a href='#step-import'>1 导入行程</a><a href='#step-build'>2 构建与校对</a><a href='#step-risk'>3 检查风险</a><a href='#step-plan'>4 生成 Plan B</a><a href='#step-chat'>5 提问与导出</a></nav>")
         with gr.Sidebar(label="会话工作台", open=False, width=285, position="left", elem_id="session-management") as session_sidebar:
             gr.Markdown("## 会话工作台")
-            session_badge = gr.Markdown("正在初始化独立会话……", elem_classes=["session-current"])
+            gr.Markdown("### 当前会话", elem_classes=["session-section-heading"])
+            session_badge = gr.HTML("", js_on_load=SESSION_ACTION_JS, apply_default_css=False, elem_id="current-session-card")
             new_session_button = gr.Button("＋ 新建独立会话", variant="primary", elem_id="new-session-button")
-            history_select = gr.Radio(choices=[], label="历史会话", interactive=True, elem_id="history-select")
-            gr.Markdown("点击历史即可恢复行程、解析结果、风险、Plan B 和对话。记录仅保存在当前浏览器。", elem_classes=["history-help"])
-            with gr.Accordion("管理历史记录", open=False, elem_classes=["history-tools"]):
-                delete_session_button = gr.Button("删除当前会话", variant="stop")
-                clear_sessions_button = gr.Button("清空全部历史", variant="stop")
+            gr.HTML('<hr class="session-divider">')
+            history_select = gr.HTML("", js_on_load=SESSION_ACTION_JS, apply_default_css=False, elem_id="history-select")
         with gr.Column(elem_id="step-import", elem_classes=["step-card"]):
             gr.HTML("<div class='step-heading'><span class='step-number'>1</span><div><h2>导入行程</h2><p>上传自己的截图，或载入合成示例快速体验。完成后继续第 2 步。</p></div></div>")
             with gr.Row():
@@ -2040,7 +2078,7 @@ def create_app() -> gr.Blocks:
             api_name="new_session",
             show_progress_on=[session_badge], **work_event,
         ).success(mirror_history, inputs=[history_store, state], outputs=[browser_store, *progress_outputs, choice_state], api_name=False, **local_event)
-        history_select.input(
+        history_select.open_session(
             open_history_session,
             inputs=[history_select, *session_inputs],
             outputs=[*session_outputs, *view_outputs],
@@ -2048,20 +2086,12 @@ def create_app() -> gr.Blocks:
             trigger_mode="always_last",
             queue=True, show_progress="minimal", show_progress_on=[session_badge],
         ).success(mirror_history, inputs=[history_store, state], outputs=[browser_store, *progress_outputs, choice_state], api_name=False, **local_event)
-        delete_session_button.click(
-            delete_current_history_session,
-            inputs=[history_store],
-            outputs=[*session_outputs, *view_outputs],
-            api_name=False,
-            show_progress_on=[session_badge], **work_event,
-        ).success(mirror_history, inputs=[history_store, state], outputs=[browser_store, *progress_outputs, choice_state], api_name=False, **local_event)
-        clear_sessions_button.click(
-            clear_all_history_sessions,
-            inputs=[history_store],
-            outputs=[*session_outputs, *view_outputs],
-            api_name=False,
-            show_progress_on=[session_badge], **work_event,
-        ).success(mirror_history, inputs=[history_store, state], outputs=[browser_store, *progress_outputs, choice_state], api_name=False, **local_event)
+        for cards in (session_badge, history_select):
+            cards.manage_session(
+                manage_history_session, inputs=session_inputs,
+                outputs=[*session_outputs, *view_outputs], api_name=False,
+                show_progress_on=[session_badge], **work_event,
+            ).success(mirror_history, inputs=[history_store, state], outputs=[browser_store, *progress_outputs, choice_state], api_name=False, **local_event)
         # A delayed dropdown input may arrive after applying a plan has emptied
         # its choices. Validate against the graph ourselves, not stale widget
         # choices, and keep this UI value out of unrelated autosave inputs.

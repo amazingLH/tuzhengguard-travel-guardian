@@ -11,6 +11,7 @@ def test_render_and_save_callbacks_never_queue_or_cover_existing_results():
         app.run_live_inspection_guarded, app.answer_question_guarded, app.check_risks,
         app.apply_local_option, app.apply_tripgraph_edits, app.create_new_history_session,
         app.open_history_session, app.delete_current_history_session, app.clear_all_history_sessions,
+        app.manage_history_session,
     }
     for dependency in app.demo.config["dependencies"]:
         bound_callback = app.demo.fns[dependency["id"]].fn
