@@ -1,0 +1,47 @@
+{
+  "tested_at": "2026-10-24T08:13:35.043432+00:00",
+  "primary": "deepseek-v4.1-flash-1017",
+  "fallback": "qwen3.7-flash",
+  "scope": "Primary success is real. Fallback tests inject only a primary free-quota refusal and forward the fallback request to the real provider; no actual quota was exhausted for testing.",
+  "results": [
+    {
+      "phase": "real_primary_text",
+      "answer": "原计划有三段：\n1. K550 沈阳→大连，10月26日01:56–06:50，票面54.5元（已确认）。\n2. K715 大连→秦皇岛，09:54–21:00，票面112元。\n3. 车次待确认 大连→葫芦岛，09:54–19:00，票面93元。\n\n风险：第2、3段时间完全重叠，不能同时乘坐。需保留其中一段或另查车次；退改请自行办理。",
+      "length": 168
+    },
+    {
+      "phase": "injected_primary_quota_real_fallback_text",
+      "request_models": [
+        "deepseek-v4.1-flash-1017",
+        "qwen3.7-flash"
+      ],
+      "answer": "当前行程含三段：1. K550沈阳→大连；2. K715大连→秦皇岛；3. 车次待确认大连→葫芦岛。风险在于后两段均从大连出发且时间完全重叠（均为09:54开始），无法同时乘坐，需二选一或改签。",
+      "length": 97
+    },
+    {
+      "phase": "injected_primary_quota_real_fallback_vision",
+      "request_models": [
+        "deepseek-v4.1-flash-1017",
+        "qwen3.7-flash"
+      ],
+      "resolved_model": "qwen3.7-flash",
+      "fallback_reason": "free_quota_exhausted",
+      "image_report": [
+        {
+          "image_index": 1,
+          "event_indices": [
+            0
+          ]
+        }
+      ],
+      "events": [
+        {
+          "title": "K550次列车 沈阳 -> 大连",
+          "start": "2026-10-26T01:56:00+08:00",
+          "end": "2026-10-26T06:50:00+08:00",
+          "cost_cny": "54.5"
+        }
+      ]
+    }
+  ]
+}

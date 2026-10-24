@@ -16,10 +16,27 @@ FREE_QUOTA_UNAVAILABLE_MESSAGE = (
     "当前问答模型的免费额度已耗尽，且模型开启了“仅使用免费额度”。"
     "请站点维护者在百炼控制台检查该模型的用量设置，或配置有可用额度的模型后重试。"
 )
+FALLBACK_QUOTA_UNAVAILABLE_MESSAGE = (
+    "免费优先模型额度已耗尽，付费备用模型仍被“仅使用免费额度”限制。"
+    "请站点维护者在百炼控制台关闭备用模型的“免费额度用完即停”后重试。"
+)
 MODEL_UNAVAILABLE_MESSAGE = "当前模型服务暂时不可用，请稍后重试；TripGraph 和已生成的 Plan B 不受影响。"
 MODEL_PERMISSION_MESSAGE = "当前问答模型的凭据或调用权限不可用，请站点维护者检查模型配置与授权后重试。"
 MODEL_TIMEOUT_MESSAGE = "本次大模型问答超时，请稍后重试；当前会话和已有方案仍保留。"
 MODEL_RATE_LIMIT_MESSAGE = "大模型服务当前请求较多，请稍后重试；当前会话和已有方案仍保留。"
+
+
+class FallbackQuotaBlockedError(httpx.HTTPStatusError):
+    """The primary quota was exhausted and the paid fallback is also free-only."""
+
+
+def is_free_quota_failure(response: httpx.Response) -> bool:
+    if response.status_code not in (403, 429) or is_billing_failure(response):
+        return False
+    body = response.text.casefold()
+    return any(marker in body for marker in (
+        "insufficient_quota", "freetieronly", "free quota", "free tier only",
+    ))
 
 
 def model_failure_message(error: Exception) -> str:
@@ -27,10 +44,11 @@ def model_failure_message(error: Exception) -> str:
         return BILLING_UNAVAILABLE_MESSAGE
     if isinstance(error, httpx.TimeoutException):
         return MODEL_TIMEOUT_MESSAGE
+    if isinstance(error, FallbackQuotaBlockedError):
+        return FALLBACK_QUOTA_UNAVAILABLE_MESSAGE
     if isinstance(error, httpx.HTTPStatusError):
         response = error.response
-        body = response.text.casefold()
-        if any(code in body for code in ("insufficient_quota", "freetieronly", "free quota", "free tier only")):
+        if is_free_quota_failure(response):
             return FREE_QUOTA_UNAVAILABLE_MESSAGE
         if response.status_code in (401, 403):
             return MODEL_PERMISSION_MESSAGE
@@ -43,7 +61,7 @@ def is_model_failure_reply(value: object) -> bool:
     return isinstance(value, str) and value in {
         BILLING_UNAVAILABLE_MESSAGE, FREE_QUOTA_UNAVAILABLE_MESSAGE,
         MODEL_UNAVAILABLE_MESSAGE, MODEL_PERMISSION_MESSAGE, MODEL_TIMEOUT_MESSAGE,
-        MODEL_RATE_LIMIT_MESSAGE,
+        MODEL_RATE_LIMIT_MESSAGE, FALLBACK_QUOTA_UNAVAILABLE_MESSAGE,
     }
 
 

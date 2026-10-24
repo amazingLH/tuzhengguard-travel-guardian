@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from PIL import Image, ImageOps
 
 from triptwin.config import ModelSettings, Settings
+from triptwin.model_routing import request_model
 from triptwin.models import Trip, TripEvent, TripConstraints, TravelerProfile, Location
 from triptwin.image_merge import merge_image_records
 
@@ -138,12 +139,21 @@ def extract_trip_from_images(
     response: httpx.Response | None = None
     body: dict[str, Any] = {}
     attempt_count = 0
+    attempted_models: list[str] = []
+    fallback_reason: str | None = None
     image_report = []
     with httpx.Client(timeout=timeout_seconds) as client:
         for attempt in range(2):
-            attempt_count += 1
-            response = client.post(endpoint, headers=headers, json=payload)
-            response.raise_for_status()
+            reply = request_model(
+                client, endpoint, headers=headers, payload=payload,
+                fallback_model=resolved_settings.dashscope_fallback_model if model is None else None,
+            )
+            attempt_count += len(reply.attempted_models)
+            attempted_models.extend(reply.attempted_models)
+            fallback_reason = fallback_reason or reply.fallback_reason
+            response = reply.response
+            resolved_model = reply.model
+            payload["model"] = resolved_model
             body = response.json()
             request_id = (
                 response.headers.get("x-request-id")
@@ -201,6 +211,8 @@ def extract_trip_from_images(
         raise ValueError("视觉模型没有返回有效 TripGraph。")
     metadata = {
         "model": resolved_model,
+        "attempted_models": attempted_models,
+        "fallback_reason": fallback_reason,
         "request_id": request_ids[-1] if request_ids else None,
         "request_ids": request_ids,
         "usage": usages[-1] if usages else {},

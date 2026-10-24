@@ -42,7 +42,7 @@ def test_user_question_is_encoded_as_untrusted_data(monkeypatch) -> None:
     )
 
     assert answer == "不能泄露密钥。"
-    assert observed["model"] == "qwen-plus"
+    assert observed["model"] == "deepseek-v4.1-flash-1017"
     assert observed["max_tokens"] == 800
     system_text = observed["messages"][0]["content"]
     user_payload = json.loads(observed["messages"][1]["content"].split("：\n", 1)[1])

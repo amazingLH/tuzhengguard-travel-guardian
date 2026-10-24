@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from triptwin.config import ModelSettings, Settings
+from triptwin.model_routing import request_model
 
 
 def answer_with_trip_context(
@@ -84,8 +85,11 @@ def answer_with_trip_context(
         "Content-Type": "application/json",
     }
     with httpx.Client(timeout=timeout_seconds) as client:
-        response = client.post(endpoint, headers=headers, json=payload)
-        response.raise_for_status()
+        reply = request_model(
+            client, endpoint, headers=headers, payload=payload,
+            fallback_model=resolved_settings.dashscope_fallback_model if model is None else None,
+        )
+        response = reply.response
     body = response.json()
     answer = body["choices"][0]["message"]["content"]
     if not isinstance(answer, str) or not answer.strip():

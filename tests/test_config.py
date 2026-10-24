@@ -14,6 +14,7 @@ def _clear_cloud_environment(monkeypatch) -> None:
         "BAILIAN_ENVIRONMENT_ID",
         "DASHSCOPE_TEXT_MODEL",
         "DASHSCOPE_VISION_MODEL",
+        "DASHSCOPE_FALLBACK_MODEL",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -33,8 +34,9 @@ def test_settings_load_and_mask_secrets(monkeypatch, tmp_path: Path) -> None:
     settings = Settings.from_env(env_file)
 
     assert settings.bailian_agent_id == "agent_demo"
-    assert settings.dashscope_text_model == "qwen-plus"
-    assert settings.dashscope_vision_model == "qwen3-vl-plus"
+    assert settings.dashscope_text_model == "deepseek-v4.1-flash-1017"
+    assert settings.dashscope_vision_model == "deepseek-v4.1-flash-1017"
+    assert settings.dashscope_fallback_model == "qwen3.7-flash"
     assert "secret-dashscope" not in repr(settings)
     assert "secret-flyai" not in repr(settings)
     assert settings.managed_agents_base_url.startswith("https://ws-demo.")

@@ -68,9 +68,9 @@ LLM 负责理解、编排和解释；TripGraph、风险规则、候选校验与�
 
 “途证哨智能回复”结合当前会话的行程与解析草稿、字段置信度、风险和工具证据、原方案、Plan B 候选与应用记录、先前页面结果及对话历史回答，每次最多 300 字。应用局部 Plan B 后保留原 Plan A 和候选比较记录，聊天不会被清空；刷新或切换回来后可继续追问旧方案。模型对未提供的酒店、天气、库存、退款政策等信息明确说明未知。
 
-新问题统一调用文本模型，不再使用固定示例答案绕过 LLM；同一会话、相同内容和相同对话背景下的重复问题可复用缓存。缓存区分会话与上下文，模型故障回复不缓存。服务明确报免费额度耗尽时，页面会显示额度与模型配置提示，不将故障当成成功完成。
+新问题统一调用文本模型，不再使用固定示例答案绕过 LLM；同一会话、相同内容和相同对话背景下的重复问题可复用缓存。缓存区分会话与上下文，模型故障回复不缓存。免费优先模型明确返回额度耗尽时，自动改用付费备用模型重试；若备用模型仍受额度限制才显示配置提示，不将故障当成成功完成。
 
-文本模型默认 `qwen-plus`，可通过 `DASHSCOPE_TEXT_MODEL` 覆盖。若模型开启“免费额度用完即停”，免费额度耗尽后会被上游拒绝，即使应用仍有每日次数也无法继续调用；维护者应在百炼控制台检查对应模型的用量设置或更换可用模型。账户欠费与普通网络/权限错误分别提示。
+文本问答和图片解析默认优先使用 `deepseek-v4.1-flash-1017`，收到明确的免费额度耗尽错误后改用 `qwen3.7-flash`。必须在百炼为 DeepSeek 开启“免费额度用完即停”，并为付费备用 Qwen 关闭该开关；程序不能覆盖账户级开关，也不能仅凭一次成功调用判断剩余免费额度。一次用户操作内切换模型不会重复扣应用的每日次数。普通权限、欠费、限流或服务错误不触发额外付费调用。策略及验证见 [免费优先与备用模型](docs/free-first-model-routing-2026-10-24.md)。
 
 ## 本地运行
 
@@ -93,8 +93,9 @@ FLYAI_API_KEY=
 BAILIAN_WORKSPACE_ID=
 BAILIAN_AGENT_ID=
 BAILIAN_ENVIRONMENT_ID=
-DASHSCOPE_TEXT_MODEL=qwen-plus
-DASHSCOPE_VISION_MODEL=qwen3-vl-plus
+DASHSCOPE_TEXT_MODEL=deepseek-v4.1-flash-1017
+DASHSCOPE_VISION_MODEL=deepseek-v4.1-flash-1017
+DASHSCOPE_FALLBACK_MODEL=qwen3.7-flash
 ```
 
 每天按北京时间重置：每个浏览器最多 100 次提问、100 次自行上传图片解析，每位访客最多 100 次实时高德/FlyAI 核验。三类服务均无全站每日次数上限。重复问题及有效实时证据会复用缓存；本地示例的导入、解析与确定性风险检查不调用模型；所有自由提问（包括示例问题）均由 LLM 回答，使用相同的每日提问额度。
@@ -137,14 +138,15 @@ TRIPTWIN_BROWSER_STATE_SECRET
 TRIPTWIN_RATE_LIMIT_SALT
 ```
 
-模型名称不是密钥，可按需在普通环境变量中覆盖；文本问答默认使用 `qwen-plus`，视觉解析默认使用 `qwen3-vl-plus`：
+模型名称不是密钥，可按需在普通环境变量中覆盖；文本与视觉均默认 DeepSeek 优先、Qwen 备用：
 
 ```text
-DASHSCOPE_TEXT_MODEL=qwen-plus
-DASHSCOPE_VISION_MODEL=qwen3-vl-plus
+DASHSCOPE_TEXT_MODEL=deepseek-v4.1-flash-1017
+DASHSCOPE_VISION_MODEL=deepseek-v4.1-flash-1017
+DASHSCOPE_FALLBACK_MODEL=qwen3.7-flash
 ```
 
-模型额度设置请进入[百炼华北2（北京）免费额度页面](https://bailian.console.aliyun.com/cn-beijing/costing-balance/free-quota)，按模型 Code 搜索 `qwen-plus` 与 `qwen3-vl-plus`。若列表未显示，可从[模型广场](https://bailian.console.aliyun.com/model/market)进入对应模型详情并选择匹配的 Code/版本；额度过期、耗尽、地域与筛选状态都可能影响显示，不能仅凭搜索不到判断模型不存在。未认证账号无法关闭“免费额度用完即停”；已认证账号可按控制台设置管理。详见[官方说明](https://help.aliyun.com/zh/model-studio/new-free-quota)。
+模型额度设置请进入[百炼华北2（北京）免费额度页面](https://bailian.console.aliyun.com/cn-beijing/costing-balance/free-quota)，按模型 Code 搜索 `deepseek-v4.1-flash-1017` 与 `qwen3.7-flash`，前者开启“免费额度用完即停”、后者关闭。若列表未显示，可从[模型广场](https://bailian.console.aliyun.com/model/market)进入对应模型详情并选择匹配的 Code/版本；额度过期、耗尽、地域与筛选状态都可能影响显示，不能仅凭搜索不到判断模型不存在。未认证账号无法关闭“免费额度用完即停”；已认证账号可按控制台设置管理。详见[官方说明](https://help.aliyun.com/zh/model-studio/new-free-quota)。
 
 部署完成后必须使用无痕窗口和手机网络分别测试，并确认运行日志不包含凭据。
 
