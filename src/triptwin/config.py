@@ -17,7 +17,7 @@ class ModelSettings(BaseModel):
 
     dashscope_api_key: SecretStr = Field(min_length=1)
     bailian_workspace_id: str = Field(min_length=1)
-    dashscope_text_model: str = Field(default="qwen3.7-flash", min_length=1)
+    dashscope_text_model: str = Field(default="qwen-plus", min_length=1)
     dashscope_vision_model: str = Field(default="qwen3.7-flash", min_length=1)
 
     @classmethod
@@ -37,7 +37,7 @@ class ModelSettings(BaseModel):
             dashscope_text_model=(
                 os.getenv("DASHSCOPE_TEXT_MODEL")
                 or file_values.get("DASHSCOPE_TEXT_MODEL")
-                or "qwen3.7-flash"
+                or "qwen-plus"
             ).strip(),
             dashscope_vision_model=(
                 os.getenv("DASHSCOPE_VISION_MODEL")
@@ -61,7 +61,7 @@ class Settings(BaseModel):
     bailian_workspace_id: str = Field(min_length=1)
     bailian_agent_id: str = Field(min_length=1)
     bailian_environment_id: str = Field(min_length=1)
-    dashscope_text_model: str = Field(default="qwen3.7-flash", min_length=1)
+    dashscope_text_model: str = Field(default="qwen-plus", min_length=1)
     dashscope_vision_model: str = Field(default="qwen3.7-flash", min_length=1)
 
     @classmethod
@@ -91,7 +91,7 @@ class Settings(BaseModel):
             dashscope_text_model=(
                 os.getenv("DASHSCOPE_TEXT_MODEL")
                 or file_values.get("DASHSCOPE_TEXT_MODEL")
-                or "qwen3.7-flash"
+                or "qwen-plus"
             ).strip(),
             dashscope_vision_model=(
                 os.getenv("DASHSCOPE_VISION_MODEL")

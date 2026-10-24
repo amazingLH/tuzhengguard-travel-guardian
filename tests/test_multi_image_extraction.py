@@ -187,8 +187,14 @@ def test_legacy_multiphoto_history_cannot_reuse_silent_zero_risk(monkeypatch, tm
         app.generate_plan_b_guarded(state, True, None)
     with pytest.raises(Exception, match="尚未逐张核齐"):
         app.run_live_inspection_guarded(state, True, None)
-    with pytest.raises(Exception, match="尚未逐张核齐"):
-        app.answer_question_guarded("有没有冲突？", [], state, None)
+    monkeypatch.setattr(app, "reserve_global", lambda *_: (True, 1, 0))
+    def model(question, context):
+        assert "risks" not in context
+        assert any("逐张核齐" in warning for warning in context["data_quality_warnings"])
+        return "旧导入没有逐张核齐，无法确认整段行程是否有冲突。"
+    monkeypatch.setattr(app, "answer_with_trip_context", model)
+    _, messages, _ = app.answer_question_guarded("有没有冲突？", [], state, None)
+    assert "无法确认" in messages[-1]["content"]
     with pytest.raises(Exception, match="尚未逐张核齐"):
         app.parse_current_import(restored[0], False, None, state)
     assert snapshot["trip_state"] == {"trip_source": "uploaded_image", "trip": trip}

@@ -42,8 +42,8 @@ def test_user_question_is_encoded_as_untrusted_data(monkeypatch) -> None:
     )
 
     assert answer == "不能泄露密钥。"
-    assert observed["model"] == "qwen3.7-flash"
-    assert observed["max_tokens"] == 160
+    assert observed["model"] == "qwen-plus"
+    assert observed["max_tokens"] == 800
     system_text = observed["messages"][0]["content"]
     user_payload = json.loads(observed["messages"][1]["content"].split("：\n", 1)[1])
     assert "不可信用户输入" in system_text
@@ -51,11 +51,11 @@ def test_user_question_is_encoded_as_untrusted_data(monkeypatch) -> None:
     assert user_payload["verified_context"]["trip"]["id"] == "synthetic"
 
 
-def test_answer_is_hard_limited_to_one_hundred_characters(monkeypatch) -> None:
+def test_answer_is_hard_limited_to_three_hundred_characters(monkeypatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
-            json={"choices": [{"message": {"content": "旅" * 150}}]},
+            json={"choices": [{"message": {"content": "旅" * 350}}]},
         )
 
     transport = httpx.MockTransport(handler)
@@ -72,6 +72,6 @@ def test_answer_is_hard_limited_to_one_hundred_characters(monkeypatch) -> None:
         settings=_settings(),
     )
 
-    assert len(answer) == 100
+    assert len(answer) == 300
     assert answer.endswith("…")
 

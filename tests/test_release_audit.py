@@ -174,13 +174,15 @@ def test_chat_failure_is_not_cached(monkeypatch, tmp_path):
     assert not store["answer_cache"]
 
 
-def test_long_question_and_unbuilt_example_do_not_call_model(monkeypatch):
+def test_long_question_is_blocked_but_unbuilt_example_uses_llm(monkeypatch):
     import app
     monkeypatch.setattr(app, "reserve_global", lambda *a: pytest.fail("quota used"))
     with pytest.raises(Exception, match="500 字"):
         app.answer_question_guarded("x" * 501, [], {}, None)
+    monkeypatch.setattr(app, "reserve_global", lambda *_: (True, 1, 0))
+    monkeypatch.setattr(app, "answer_with_trip_context", lambda q, context: "请先提供行程，当前信息不足。")
     _, history, _ = app.answer_question_guarded("为什么存在衔接风险？", [], {"trip_source": "synthetic_example"}, None)
-    assert "完成第 2 步" in history[-1]["content"]
+    assert "信息不足" in history[-1]["content"]
 
 
 def cli_run(stdout):
@@ -263,11 +265,12 @@ def test_inspect_button_performs_real_weather_check_even_without_risks(monkeypat
     assert len(calls) == 1  # Reuse clearly timestamped evidence without another charge.
 
 
-def test_guarded_free_synonym_does_not_consume_quota(monkeypatch):
+def test_example_synonym_uses_model_and_counts_question(monkeypatch):
     import app
-    monkeypatch.setattr(app, "reserve_global", lambda *a: pytest.fail("quota used"))
+    monkeypatch.setattr(app, "reserve_global", lambda *_: (True, 1, 0))
+    monkeypatch.setattr(app, "answer_with_trip_context", lambda *_: "不会自动预订。")
     _, _, store = app.answer_question_guarded("是否会自动预订？", [], {"trip": example_trip("multi"), "trip_source": "synthetic_example"}, None)
-    assert store.get("usage", {}).get("questions", 0) == 0
+    assert store["usage"]["questions"] == 1
 
 
 def test_pending_view_reset_removes_previous_conversation_and_export():

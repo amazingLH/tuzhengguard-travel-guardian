@@ -1,0 +1,26 @@
+{
+  "tested_at": "2026-10-24T06:43:38.617463+00:00",
+  "model": "qwen-plus",
+  "source": "Local application calling the real configured text model with public ticket examples; no model mocking.",
+  "scope": "Plan comparison before and after applying a local alternative, with dialogue history and unknown-fact boundaries.",
+  "results": [
+    {
+      "phase": "before_apply",
+      "question": "plan B相比第一个计划来说好在哪里",
+      "answer": "Plan B 不是“更好”，而是**解决原计划冲突的必要调整**：  \n- 原计划含2段重叠行程（大连→秦皇岛 & 大连→葫芦岛），存在1个明确风险；  \n- Plan B 提供两个互斥选项，均消除重叠、保留受保护的沈阳→大连段；  \n- 若选“去葫芦岛”，票面¥147.5（比原¥259.5低）、早2小时抵达（19:00），但放弃秦皇岛。  \n⚠️ 实际退改费用、余票、时效等未核查，需您自行确认。",
+      "length": 200
+    },
+    {
+      "phase": "after_apply",
+      "question": "现在已经换成 Plan B 了，原来的 Plan A 有哪些行程，问题在哪里？",
+      "answer": "当前已应用 Plan B（保留 K715 大连→秦皇岛），原 Plan A 含三段行程：  \n- K550 沈阳→大连（已保护，不可改）  \n- K715 大连→秦皇岛  \n- 车次待确认 大连→葫芦岛  \n\n问题：同一时刻（09:54）需同时出发去两个不同目的地（秦皇岛 & 葫芦岛），存在**时空冲突风险**（1 个风险）。  \nPlan B 通过移除葫芦岛行程解决该冲突，票面金额 ¥166.5，风险降为 0。",
+      "length": 208
+    },
+    {
+      "phase": "unknown_facts",
+      "question": "当前会话能确认酒店名字、实时天气和退票能退多少钱吗？不能确认就如实说未知。",
+      "answer": "不能确认。  \n- 酒店名字：未在 verified_context 中提供，未知。  \n- 实时天气：tool_evidence 显示 amap 未运行，无天气数据。  \n- 退票金额：仅知票面金额（¥166.5 或 ¥147.5），退款及手续费未查询，实际可退金额未知。",
+      "length": 137
+    }
+  ]
+}

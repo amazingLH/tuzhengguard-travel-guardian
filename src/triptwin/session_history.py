@@ -68,7 +68,21 @@ def save_active_session(value: Any, snapshot: dict[str, Any]) -> dict[str, Any]:
     if session is None:
         store, created = create_session(store)
         session = _find_in_store(store, created["id"])
-    session["snapshot"] = _sanitize_snapshot(snapshot)
+    previous = session.get("snapshot") or {}
+    saved = _sanitize_snapshot(snapshot)
+    workspaces = copy.deepcopy(previous.get("workspace_history")) if isinstance(previous.get("workspace_history"), list) else []
+    before, after = workspace_snapshot(previous), workspace_snapshot(saved)
+    if before != after and (before["trip_state"] or before["imported_images"]):
+        if not workspaces or workspaces[-1].get("workspace") != before:
+            workspaces.append({"recorded_at": session.get("updated_at"), "workspace": before})
+    saved["workspace_history"] = workspaces
+    conversations = copy.deepcopy(previous.get("conversation_archive")) if isinstance(previous.get("conversation_archive"), list) else []
+    old_messages, new_messages = previous.get("chat_history") or [], saved["chat_history"]
+    if old_messages and new_messages[:len(old_messages)] != old_messages:
+        if not conversations or conversations[-1] != old_messages:
+            conversations.append(copy.deepcopy(old_messages))
+    saved["conversation_archive"] = conversations
+    session["snapshot"] = saved
     session["updated_at"] = datetime.now(UTC).isoformat()
     trip_state = session["snapshot"].get("trip_state")
     trip = (trip_state.get("trip") or trip_state.get("draft_trip")) if isinstance(trip_state, dict) else None
@@ -184,7 +198,31 @@ def blank_snapshot() -> dict[str, Any]:
         "image_previews": [],
         "editor_text": None,
         "question_text": "",
+        "workspace_history": [],
+        "conversation_archive": [],
     }
+
+
+def workspace_snapshot(snapshot: Any) -> dict[str, Any]:
+    """Archive displayed text/structured facts, without image bytes or file paths."""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    state = snapshot.get("trip_state") or {}
+    fields = (
+        "trip", "draft_trip", "trip_source", "stage", "parse_summary",
+        "field_confidence", "low_confidence_fields", "recognition_confirmed",
+        "image_coverage", "image_report_text", "completion_rows", "completion_error", "legacy_image_coverage_missing",
+        "local_plan_options", "local_plan_choice", "local_plan_notice", "local_analysis_completed",
+        "live_candidate_artifact", "live_inspection", "live_generated_at", "plan_revisions",
+    )
+    result = {"trip_state": {key: copy.deepcopy(state[key]) for key in fields if key in state}}
+    for key in ("status", "confirmed", "risks", "plan_b", "trace", "amap_status", "inspection_status", "editor_text"):
+        if key in snapshot:
+            result[key] = copy.deepcopy(snapshot[key])
+    result["imported_images"] = [
+        {"name": item["name"]} for item in snapshot.get("image_previews") or []
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    ]
+    return result
 
 
 def _sanitize_snapshot(value: Any) -> dict[str, Any]:
@@ -215,7 +253,10 @@ def _sanitize_snapshot(value: Any) -> dict[str, Any]:
                 )
             if isinstance(content, str) and content:
                 messages.append({"role": item["role"], "content": content})
-        base["chat_history"] = messages[-100:]
+        base["chat_history"] = messages
+    for key in ("workspace_history", "conversation_archive"):
+        if not isinstance(base.get(key), list):
+            base[key] = []
     return base
 
 

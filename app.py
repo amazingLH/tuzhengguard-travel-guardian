@@ -31,7 +31,6 @@ from triptwin.demo_service import (
     active_inspection_markdown,
     analyze_trip,
     amap_inspection_markdown,
-    chat_context,
     load_cached_vision,
     plan_b_markdown,
     risk_markdown,
@@ -39,6 +38,7 @@ from triptwin.demo_service import (
     tool_trace_markdown,
 )
 from triptwin.trip_assistant import answer_with_trip_context
+from triptwin.qa_context import build_session_context, cache_conversation, remember_applied_plan
 from triptwin.session_history import (
     clear_sessions,
     create_session,
@@ -57,7 +57,10 @@ from triptwin.branding import PRODUCT_TITLE
 from triptwin.runtime_agent import run_live_trip
 from triptwin.web_theme import WORKBENCH_CSS, hero_html
 from triptwin.session_sidebar import SESSION_ACTION_JS, current_session_html, history_sidebar_html
-from triptwin.service_errors import BILLING_UNAVAILABLE_MESSAGE, is_billing_failure
+from triptwin.service_errors import (
+    BILLING_UNAVAILABLE_MESSAGE, MODEL_UNAVAILABLE_MESSAGE, is_billing_failure,
+    is_model_failure_reply, model_failure_message,
+)
 from triptwin.exporter import export_trip_files
 from triptwin.input_completion import completion_rows, cancelled_orders, confirm_draft, validation_message
 from triptwin.functional_examples import example_kind, example_paths, example_trip, field_description
@@ -67,7 +70,6 @@ from triptwin.usage_guard import (
     browser_can_consume,
     browser_limits,
     consume_browser,
-    release_reservation,
     reserve_client,
     reserve_global,
 )
@@ -96,7 +98,7 @@ UPLOADED_INSPECTION_PENDING = (
     "### ⏱️ 当前上传行程 · 主动巡检\n\n"
     "尚未执行实时核验。"
 )
-MODEL_UNAVAILABLE_REPLY = "当前模型服务暂时不可用，请稍后重试；TripGraph 和已生成的 Plan B 不受影响。"
+MODEL_UNAVAILABLE_REPLY = MODEL_UNAVAILABLE_MESSAGE
 
 APP_CSS = """
 .hero {background:linear-gradient(120deg,#f4f7ff,#dbeafe);padding:24px;border:1px solid #c7d7f4;border-radius:18px;color:#17233c}
@@ -671,7 +673,7 @@ def _same_image(first: Path, second: Path) -> bool:
 
 def _require_image_coverage(state):
     if (state or {}).get("legacy_image_coverage_missing"):
-        raise gr.Error("此历史会话由旧版多图解析生成，尚未逐张核齐，不能据此进行风险分析、Plan B 或行程问答。请点击解析重新核对所有原图；原图已过期时请重新上传。本次未调用模型或外部工具。")
+        raise gr.Error("此历史会话由旧版多图解析生成，尚未逐张核齐，不能据此进行风险分析或生成 Plan B。请点击解析重新核对所有原图；原图已过期时请重新上传。本次未调用模型或外部工具。")
 
 
 def check_risks(state: dict[str, Any], confirmed: bool) -> str:
@@ -845,6 +847,7 @@ def apply_local_option(selected, state):
     if option is None:
         raise gr.Error("方案已失效，请基于当前行程重新生成 Plan B。")
     updated = dict(state)
+    updated["plan_revisions"] = remember_applied_plan(state, option, options)
     updated["trip"] = option["trip"]
     updated["local_plan_options"] = []
     updated.pop("local_plan_choice", None)
@@ -905,6 +908,8 @@ def timed_operation(callback, label):
         elapsed = time.perf_counter() - started
         duration = "小于 0.01 秒" if elapsed < 0.01 else f"{elapsed:.2f} 秒"
         values = result if isinstance(result, tuple) else (result,)
+        if callback is answer_question_guarded and len(values) > 1 and values[1] and is_model_failure_reply(values[1][-1].get("content")):
+            return *values, f"⚠️ {label}未完成，请查看模型服务提示；当前会话已保留。"
         return *values, f"✅ {label}完成 · 执行耗时 {duration}"
     return execute
 
@@ -1016,37 +1021,24 @@ def answer_question(
     question: str,
     history: list[dict[str, Any]] | None,
     state: dict[str, Any],
+    snapshot: dict[str, Any] | None = None,
+    context: dict[str, Any] | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
-    _require_image_coverage(state)
     text = (question or "").strip()
     if not text:
         raise gr.Error("请先输入问题。")
     if len(text) > 500:
         raise gr.Error("问题请控制在 500 字以内，便于简洁回答并控制费用。")
-    trip_payload = (
-        state["trip"]
-        if state and isinstance(state.get("trip"), dict)
-        else load_cached_vision()["trip"]
-    )
     conversation = list(history or [])
     conversation.append({"role": "user", "content": text})
     try:
         answer = answer_with_trip_context(
             text,
-            chat_context(
-                trip_payload,
-                include_cached_amap=state.get("trip_source")
-                == "synthetic_example",
-                candidate_artifact=state.get("live_candidate_artifact"),
-                amap_inspection=state.get("live_inspection"),
-            ),
+            context if context is not None else build_session_context(state, history, snapshot),
         )
     except Exception as exc:
-        if is_billing_failure(exc):
-            gr.Warning(BILLING_UNAVAILABLE_MESSAGE, duration=12)
-            answer = BILLING_UNAVAILABLE_MESSAGE
-        else:
-            answer = MODEL_UNAVAILABLE_REPLY
+        answer = model_failure_message(exc)
+        gr.Warning(answer, duration=12)
     conversation.append({"role": "assistant", "content": answer})
     return "", conversation
 
@@ -1058,192 +1050,43 @@ def answer_question_guarded(
     browser_store: dict[str, Any] | None,
     request: gr.Request | None = None,
 ) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
-    """Answer with browser caching and bounded daily public model usage."""
-
-    _require_image_coverage(state)
+    """Use the LLM for every new question, with session-scoped contextual caching."""
     text = (question or "").strip()
     if not text:
         raise gr.Error("请先输入问题。")
     if len(text) > 500:
         raise gr.Error("问题请控制在 500 字以内，本次未调用模型。")
-    store, _ = ensure_active_session(browser_store)
-    if not _has_question_context(state):
-        conversation = list(history or [])
-        conversation.extend(
-            [
-                {"role": "user", "content": text},
-                {
-                    "role": "assistant",
-                    "content": (
-                        "请先上传行程单并构建旅行数字孪生，"
-                        "或展开“行程功能示例”、选择示例并完成第 2 步后再提问。"
-                    ),
-                },
-            ]
-        )
-        return "", conversation, store
-    trip_payload = (
-        state["trip"]
-        if state and isinstance(state.get("trip"), dict)
-        else load_cached_vision()["trip"]
-    )
-
-    # The bundled golden case is fixed and fully verified. The four canonical
-    # showcase questions are quota-free; paraphrases still use the browser's
-    # daily allowance even when their answer can be resolved locally.
-    deterministic_answer = _synthetic_example_answer(text, state)
-    cache_key = _answer_cache_key(
-        text,
-        {
-            "trip": trip_payload,
-            "candidate_artifact": state.get("live_candidate_artifact"),
-            "live_generated_at": state.get("live_generated_at"),
-        },
-    )
+    store, session = ensure_active_session(browser_store)
+    snapshot = session.get("snapshot") or {}
+    context = build_session_context(state, history, snapshot)
+    context["session"] = {"title": session.get("title"), "created_at": session.get("created_at")}
+    cached_context = {key: value for key, value in context.items() if key != "conversation_history"}
+    cache_key = _answer_cache_key(text, {
+        "session_id": session["id"], "context": cached_context,
+        "conversation": cache_conversation(text, history), "reply_limit": 300,
+    })
     cached = store.get("answer_cache", {}).get(cache_key)
-    if isinstance(cached, str) and cached.strip():
+    if isinstance(cached, str) and cached.strip() and not is_model_failure_reply(cached):
         conversation = list(history or [])
-        conversation.extend(
-            [
-                {"role": "user", "content": text},
-                {"role": "assistant", "content": cached},
-            ]
-        )
+        conversation.extend([{"role": "user", "content": text}, {"role": "assistant", "content": cached}])
         return "", conversation, store
-
-    if deterministic_answer is not None and _is_free_synthetic_question(text, state):
-        conversation = list(history or [])
-        conversation.extend(
-            [
-                {"role": "user", "content": text},
-                {"role": "assistant", "content": deterministic_answer},
-            ]
-        )
-        cache = dict(store.get("answer_cache") or {})
-        cache[cache_key] = deterministic_answer
-        store["answer_cache"] = dict(list(cache.items())[-50:])
-        return "", conversation, store
-
+    allowed, usage = browser_can_consume(store.get("usage"), "questions")
+    if not allowed:
+        return _quota_answer(text, history, f"每个浏览器每天最多 {browser_limits()['questions']} 次提问", store)
     client_key = _anonymous_client_key(request)
-    client_reserved = False
     if client_key:
         client_allowed, _, client_limit = reserve_client(client_key, "questions")
         if not client_allowed:
-            return _quota_answer(
-                text, history, f"当前匿名访客每天最多 {client_limit} 次提问", store
-            )
-        client_reserved = True
-
-    allowed, usage = browser_can_consume(store.get("usage"), "questions")
-    if not allowed:
-        if client_reserved:
-            release_reservation("client", client_key, "questions")
-        return _quota_answer(
-            text,
-            history,
-            f"每个浏览器每天最多 {browser_limits()['questions']} 次提问",
-            store,
-        )
-
-    if deterministic_answer is not None:
-        conversation = list(history or [])
-        conversation.extend(
-            [
-                {"role": "user", "content": text},
-                {"role": "assistant", "content": deterministic_answer},
-            ]
-        )
-        store["usage"] = consume_browser(usage, "questions")
-        cache = dict(store.get("answer_cache") or {})
-        cache[cache_key] = deterministic_answer
-        store["answer_cache"] = dict(list(cache.items())[-50:])
-        return "", conversation, store
-
+            return _quota_answer(text, history, f"当前匿名访客每天最多 {client_limit} 次提问", store)
     reserve_global("questions")
-
-    _, conversation = answer_question(text, history, state)
+    _, conversation = answer_question(text, history, state, snapshot, context)
     store["usage"] = consume_browser(usage, "questions")
     answer = conversation[-1].get("content") if conversation else None
-    if isinstance(answer, str) and answer.strip() and answer not in {MODEL_UNAVAILABLE_REPLY, BILLING_UNAVAILABLE_MESSAGE}:
+    if isinstance(answer, str) and answer.strip() and not is_model_failure_reply(answer):
         cache = dict(store.get("answer_cache") or {})
         cache[cache_key] = answer
         store["answer_cache"] = dict(list(cache.items())[-50:])
     return "", conversation, store
-
-
-def _synthetic_example_answer(
-    question: str, state: dict[str, Any] | None
-) -> str | None:
-    """Return verified local answers for common questions about the golden case."""
-
-    if not isinstance(state, dict) or state.get("trip_source") != "synthetic_example":
-        return None
-    normalized = "".join(
-        character
-        for character in question.casefold()
-        if character.isalnum() or "\u4e00" <= character <= "\u9fff"
-    )
-    if "衔接" in normalized and ("风险" in normalized or "为什么" in normalized):
-        return (
-            "存在衔接风险：高铁 10:00 到达杭州东站，西湖游船 10:35 开始，"
-            "中间只有 35 分钟；行程预计需要 45 分钟交通，再加 20 分钟安全缓冲，"
-            "合计至少需要 65 分钟，目前缺少 30 分钟。建议保留高铁，顺延或替换游船。"
-        )
-    if "第二晚" in normalized and any(
-        keyword in normalized for keyword in ("推荐", "住哪", "酒店", "住宿")
-    ):
-        return (
-            "第二晚推荐 **如家精选-杭州西湖景区苏堤店**：2026-10-19 入住、"
-            "10月20日退房，查询价约 **¥135/晚**，低于 Plan B 的 ¥500 增量上限。"
-            "该候选来自 FlyAI 酒店查询，价格和房态请以跳转后的飞猪页面为准；"
-            "途证哨 不会代订。"
-        )
-    if "自动" in normalized and any(
-        keyword in normalized for keyword in ("预定", "预订", "下单", "支付")
-    ):
-        return (
-            "不会。途证哨 只进行风险分析并提供带来源链接的候选，"
-            "不会替你预订、下单或支付；最终选择和操作始终由你完成。"
-        )
-    if "候选" in normalized and any(
-        keyword in normalized for keyword in ("来源", "来自", "哪来", "数据")
-    ):
-        return (
-            "Plan B 的景点和酒店候选来自官方 FlyAI Skill 的真实查询结果，"
-            "并保留飞猪 jumpUrl 作为来源证据，不是由模型编造；"
-            "路线和天气核验则来自高德地图 MCP。"
-        )
-    return None
-
-
-def _is_free_synthetic_question(
-    question: str, state: dict[str, Any] | None
-) -> bool:
-    if not isinstance(state, dict) or state.get("trip_source") != "synthetic_example":
-        return False
-    return _normalize_showcase_question(question) in {
-        "为什么存在衔接风险",
-        "第二晚推荐住哪里",
-        "是否会自动预定",
-        "候选数据来自哪里",
-        "是否会自动预订",
-    }
-
-
-def _has_question_context(state: dict[str, Any] | None) -> bool:
-    if not isinstance(state, dict):
-        return False
-    if isinstance(state.get("trip"), dict):
-        return True
-    return False
-
-
-def _normalize_showcase_question(question: str) -> str:
-    return "".join(
-        character
-        for character in question.casefold()
-        if character.isalnum() or "\u4e00" <= character <= "\u9fff"
-    )
 
 
 def _answer_cache_key(question: str, trip_payload: dict[str, Any]) -> str:
@@ -1726,9 +1569,8 @@ def create_app() -> gr.Blocks:
             with gr.Column(elem_classes=["guide-card"]):
                 gr.HTML(
                     "<div class='guide-title-row'><h3>💡 演示操作提示</h3>"
-                    "<span class='example-free-note'>通过“行程功能示例”选择“单行程正常示例”后，以下四个标准问题"
-                    "不消耗每日提问额度；"
-                    "请完整复制到“向途证哨提问”中，以免改写后计入额度。</span></div>"
+                    "<span class='example-free-note'>可参考以下问题自由提问。智能回复会结合本会话的原方案、Plan B、"
+                    "方案变更及对话记录分析，每次最多回复 300 字。</span></div>"
                 )
                 gr.Markdown(
                     """完成前面的步骤后，可以提问：
@@ -2019,7 +1861,7 @@ def create_app() -> gr.Blocks:
         bind_operation(
             apply_local_button.click, apply_local_option, "方案应用与复检", apply_progress, inputs=[local_choice, state],
             outputs=[trip_json, timeline, risks, state, plan_b, status, confirmed], api_name=False,
-        ).success(lambda: ([], "", None), outputs=[chatbot, question, export_files], api_name=False, **local_event).success(refresh_confidence, inputs=state, outputs=[confidence, low_confidence], **local_event).success(
+        ).success(lambda: None, outputs=export_files, api_name=False, **local_event).success(refresh_confidence, inputs=state, outputs=[confidence, low_confidence], **local_event).success(
             context_panels_for_state, inputs=state, outputs=[amap_status, inspection_status], **local_event,
         ).success(
             persist_current_session, inputs=session_inputs, outputs=persist_outputs, api_name=False, **local_event,

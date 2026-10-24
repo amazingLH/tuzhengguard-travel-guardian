@@ -33,7 +33,7 @@ def test_settings_load_and_mask_secrets(monkeypatch, tmp_path: Path) -> None:
     settings = Settings.from_env(env_file)
 
     assert settings.bailian_agent_id == "agent_demo"
-    assert settings.dashscope_text_model == "qwen3.7-flash"
+    assert settings.dashscope_text_model == "qwen-plus"
     assert settings.dashscope_vision_model == "qwen3.7-flash"
     assert "secret-dashscope" not in repr(settings)
     assert "secret-flyai" not in repr(settings)

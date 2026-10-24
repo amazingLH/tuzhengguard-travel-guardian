@@ -211,68 +211,36 @@ def test_public_chat_reuses_browser_cache_without_second_model_call(monkeypatch)
     assert repeated_history[-1]["content"] == history[-1]["content"]
 
 
-def test_canonical_synthetic_questions_are_quota_free(monkeypatch) -> None:
+def test_example_questions_use_llm_and_exact_repeat_uses_cache(monkeypatch):
     import app
-
-    monkeypatch.setattr(
-        app,
-        "answer_with_trip_context",
-        lambda *_: (_ for _ in ()).throw(AssertionError("model must not be called")),
-    )
-    monkeypatch.setattr(
-        app,
-        "reserve_global",
-        lambda *_: (_ for _ in ()).throw(AssertionError("quota must not be used")),
-    )
-    state = {
-        "trip": load_cached_vision()["trip"],
-        "trip_source": "synthetic_example",
-    }
-
-    history = []
-    store = None
-    for question in (
-        "为什么存在衔接风险？",
-        "第二晚推荐住哪里？",
-        "是否会自动预定？",
-        "候选数据来自哪里？",
-    ):
-        _, history, store = app.answer_question_guarded(
-            question, history, state, store
-        )
-
-    assert store.get("usage", {}).get("questions", 0) == 0
-
-    _, repeated_history, repeated_store = app.answer_question_guarded(
-        " 是否会自动预定？ ", history, state, store
-    )
-    assert "不会替你预订" in repeated_history[-1]["content"]
-    assert repeated_store.get("usage", {}).get("questions", 0) == 0
+    calls = []
+    def model(question, context):
+        calls.append(question)
+        assert context["current_workspace"]["trip_state"]["trip_source"] == "synthetic_example"
+        return "依据当前会话分析。"
+    monkeypatch.setattr(app, "answer_with_trip_context", model)
+    monkeypatch.setattr(app, "reserve_global", lambda *_: (True, 1, 0))
+    state = {"trip": load_cached_vision()["trip"], "trip_source": "synthetic_example"}
+    history, store = [], None
+    questions = ["为什么存在衔接风险？", "第二晚推荐住哪里？", "是否会自动预定？", "候选数据来自哪里？"]
+    for question in questions:
+        _, history, store = app.answer_question_guarded(question, history, state, store)
+    assert len(calls) == 4 and store["usage"]["questions"] == 4
+    _, _, store = app.answer_question_guarded(questions[-1], history, state, store)
+    assert len(calls) == 4 and store["usage"]["questions"] == 4
 
 
-def test_paraphrased_synthetic_question_uses_browser_quota(monkeypatch) -> None:
+def test_paraphrased_example_question_also_uses_llm(monkeypatch):
     import app
-
-    monkeypatch.setattr(
-        app,
-        "answer_with_trip_context",
-        lambda *_: (_ for _ in ()).throw(AssertionError("model must not be called")),
-    )
-    monkeypatch.setattr(
-        app,
-        "reserve_global",
-        lambda *_: (_ for _ in ()).throw(AssertionError("quota must not be used")),
-    )
-    state = {
-        "trip": load_cached_vision()["trip"],
-        "trip_source": "synthetic_example",
-    }
-
-    _, history, store = app.answer_question_guarded(
-        "它会不会帮我自动预订？", [], state, None
-    )
-
-    assert "不会替你预订" in history[-1]["content"]
+    calls = []
+    def model(question, context):
+        calls.append(question)
+        return "不会自动预订，实际订单操作需要用户自行办理。"
+    monkeypatch.setattr(app, "answer_with_trip_context", model)
+    monkeypatch.setattr(app, "reserve_global", lambda *_: (True, 1, 0))
+    _, history, store = app.answer_question_guarded("它会不会帮我自动预订？", [], {"trip": load_cached_vision()["trip"], "trip_source": "synthetic_example"}, None)
+    assert calls == ["它会不会帮我自动预订？"]
+    assert "不会自动预订" in history[-1]["content"]
     assert store["usage"]["questions"] == 1
 
 
@@ -301,27 +269,17 @@ def test_uploaded_trip_common_question_still_uses_model(monkeypatch) -> None:
     assert store["usage"]["questions"] == 1
 
 
-def test_question_without_trip_context_returns_local_instruction(monkeypatch) -> None:
+def test_question_without_trip_context_uses_llm_with_missing_data_warning(monkeypatch):
     import app
-
-    monkeypatch.setattr(
-        app,
-        "answer_with_trip_context",
-        lambda *_: (_ for _ in ()).throw(AssertionError("model must not be called")),
-    )
-    monkeypatch.setattr(
-        app,
-        "reserve_global",
-        lambda *_: (_ for _ in ()).throw(AssertionError("quota must not be used")),
-    )
-
-    _, history, store = app.answer_question_guarded(
-        "为什么有风险？", [], {}, None
-    )
-
-    assert "请先上传行程单" in history[-1]["content"]
-    assert "行程功能示例" in history[-1]["content"]
-    assert store.get("usage", {}).get("questions", 0) == 0
+    def model(question, context):
+        assert "trip" not in context
+        assert context["data_quality_warnings"]
+        return "当前还没有提供具体行程，无法判断是否存在衔接风险。"
+    monkeypatch.setattr(app, "answer_with_trip_context", model)
+    monkeypatch.setattr(app, "reserve_global", lambda *_: (True, 1, 0))
+    _, history, store = app.answer_question_guarded("为什么有风险？", [], {}, None)
+    assert "无法判断" in history[-1]["content"]
+    assert store["usage"]["questions"] == 1
 
 
 def test_public_chat_stops_after_browser_daily_limit(monkeypatch) -> None:
