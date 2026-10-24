@@ -47,6 +47,16 @@ def is_model_failure_reply(value: object) -> bool:
     }
 
 
+def vision_failure_message(error: httpx.HTTPStatusError) -> str:
+    """Explain known provider failures without displaying its private payload."""
+    message = model_failure_message(error)
+    if message != MODEL_UNAVAILABLE_MESSAGE:
+        return message.replace("问答模型", "图片解析模型").replace("大模型问答", "图片解析")
+    if error.response.status_code == 404:
+        return "当前图片解析模型在此业务空间不可用，请站点维护者核对视觉模型配置与地域。"
+    return f"图片解析服务拒绝了请求（HTTP {error.response.status_code}），请稍后重试或由站点维护者检查模型配置。"
+
+
 def is_billing_failure(value: Any) -> bool:
     """Check explicit payment codes/messages, never generic 403/429 statuses."""
     if isinstance(value, httpx.HTTPStatusError):

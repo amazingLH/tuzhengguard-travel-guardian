@@ -59,7 +59,7 @@ from triptwin.web_theme import WORKBENCH_CSS, hero_html
 from triptwin.session_sidebar import SESSION_ACTION_JS, current_session_html, history_sidebar_html
 from triptwin.service_errors import (
     BILLING_UNAVAILABLE_MESSAGE, MODEL_UNAVAILABLE_MESSAGE, is_billing_failure,
-    is_model_failure_reply, model_failure_message,
+    is_model_failure_reply, model_failure_message, vision_failure_message,
 )
 from triptwin.exporter import export_trip_files
 from triptwin.input_completion import completion_rows, cancelled_orders, confirm_draft, validation_message
@@ -496,11 +496,7 @@ def build_twin_guarded(
             raise
         import httpx
         if isinstance(exc, httpx.HTTPStatusError):
-            code = exc.response.status_code
-            message = (
-                "图片解析服务拒绝了请求。请检查创空间的视觉模型名称、调用权限及账户余额/额度。"
-                f"（HTTP {code}）"
-            )
+            message = vision_failure_message(exc)
         elif isinstance(exc, httpx.TimeoutException):
             message = "图片解析超时，请稍后再试。"
         elif isinstance(exc, ValueError):

@@ -58,6 +58,26 @@ def test_image_billing_failure_shows_safe_popup(monkeypatch, tmp_path):
     assert "never display" not in str(error.value)
 
 
+@pytest.mark.parametrize("status,body,expected", [
+    (403, {"error": {"code": "insufficient_quota", "message": "Free quota exhausted; use free tier only. private-test-key"}}, "图片解析模型的免费额度已耗尽"),
+    (403, {"code": "AllocationQuota.FreeTierOnly"}, "仅使用免费额度"),
+    (403, {"code": "AccessDenied", "message": "private-test-key"}, "凭据或调用权限不可用"),
+    (404, {"error": {"code": "model_not_found"}}, "此业务空间不可用"),
+])
+def test_image_provider_failure_explains_cause_without_private_payload(monkeypatch, tmp_path, status, body, expected):
+    import app
+    from PIL import Image
+    path = tmp_path / "upload.png"
+    Image.new("RGB", (24, 24), "white").save(path)
+    monkeypatch.setattr(app, "reserve_global", lambda *_: (True, 1, 0))
+    def failed(*_):
+        httpx.Response(status, json=body, request=httpx.Request("POST", "https://example.test")).raise_for_status()
+    monkeypatch.setattr(app, "build_twin", failed)
+    with pytest.raises(app.gr.Error, match=expected) as error:
+        app.build_twin_guarded([path], True, None)
+    assert "private-test-key" not in str(error.value)
+
+
 def test_managed_agent_billing_error_is_safe_and_not_retried():
     from triptwin.bailian_client import BailianApiError, BailianManagedAgentClient
     from triptwin.config import Settings

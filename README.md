@@ -94,7 +94,7 @@ BAILIAN_WORKSPACE_ID=
 BAILIAN_AGENT_ID=
 BAILIAN_ENVIRONMENT_ID=
 DASHSCOPE_TEXT_MODEL=qwen-plus
-DASHSCOPE_VISION_MODEL=qwen3.7-flash
+DASHSCOPE_VISION_MODEL=qwen3-vl-plus
 ```
 
 每天按北京时间重置：每个浏览器最多 100 次提问、100 次自行上传图片解析，每位访客最多 100 次实时高德/FlyAI 核验。三类服务均无全站每日次数上限。重复问题及有效实时证据会复用缓存；本地示例的导入、解析与确定性风险检查不调用模型；所有自由提问（包括示例问题）均由 LLM 回答，使用相同的每日提问额度。
@@ -137,13 +137,14 @@ TRIPTWIN_BROWSER_STATE_SECRET
 TRIPTWIN_RATE_LIMIT_SALT
 ```
 
-模型名称不是密钥，可按需在普通环境变量中覆盖；未配置时默认使用
-文本问答使用 `qwen-plus`，视觉解析使用 `qwen3.7-flash`：
+模型名称不是密钥，可按需在普通环境变量中覆盖；文本问答默认使用 `qwen-plus`，视觉解析默认使用 `qwen3-vl-plus`：
 
 ```text
 DASHSCOPE_TEXT_MODEL=qwen-plus
-DASHSCOPE_VISION_MODEL=qwen3.7-flash
+DASHSCOPE_VISION_MODEL=qwen3-vl-plus
 ```
+
+模型额度设置请进入[百炼华北2（北京）免费额度页面](https://bailian.console.aliyun.com/cn-beijing/costing-balance/free-quota)，按模型 Code 搜索 `qwen-plus` 与 `qwen3-vl-plus`。若列表未显示，可从[模型广场](https://bailian.console.aliyun.com/model/market)进入对应模型详情并选择匹配的 Code/版本；额度过期、耗尽、地域与筛选状态都可能影响显示，不能仅凭搜索不到判断模型不存在。未认证账号无法关闭“免费额度用完即停”；已认证账号可按控制台设置管理。详见[官方说明](https://help.aliyun.com/zh/model-studio/new-free-quota)。
 
 部署完成后必须使用无痕窗口和手机网络分别测试，并确认运行日志不包含凭据。
 
